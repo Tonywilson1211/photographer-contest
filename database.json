@@ -1,0 +1,231 @@
+{
+  "config": {
+    "adminEmail": "anthony.wilson@nichecom.co.uk",
+    "status": "voting"
+  },
+  "teamMembers": [
+    "Ivan Pecek",
+    "Jack Wickes",
+    "James Wilson",
+    "James Denton",
+    "Jemma Ridyard",
+    "Kacper Chodyra",
+    "Kyle Plastock",
+    "Lloyd Woodger",
+    "Paul Udogaranya",
+    "Rainer Knappe",
+    "Raul Caramizaru",
+    "Thomas McPherson",
+    "William Howe",
+    "Anthony Wilson"
+  ],
+  "activeContest": {
+    "monthName": "December 2025",
+    "monthIndex": 11,
+    "year": 2025,
+    "votesCast": 0,
+    "entries": [
+      {
+        "id": 1,
+        "photographer": "Anthony Wilson",
+        "filename": "photos/2025-12/Anthony Wilson/1.jpg"
+      },
+      {
+        "id": 2,
+        "photographer": "Anthony Wilson",
+        "filename": "photos/2025-12/Anthony Wilson/2.jpg"
+      },
+      {
+        "id": 3,
+        "photographer": "Anthony Wilson",
+        "filename": "photos/2025-12/Anthony Wilson/3.jpg"
+      },
+      {
+        "id": 4,
+        "photographer": "Jack Wickes",
+        "filename": "photos/2025-12/Jack Wickes/1.jpg"
+      },
+      {
+        "id": 5,
+        "photographer": "Jack Wickes",
+        "filename": "photos/2025-12/Jack Wickes/2.jpg"
+      },
+      {
+        "id": 6,
+        "photographer": "Jack Wickes",
+        "filename": "photos/2025-12/Jack Wickes/3.jpg"
+      },
+      {
+        "id": 7,
+        "photographer": "James Denton",
+        "filename": "photos/2025-12/James Denton/1.jpg"
+      },
+      {
+        "id": 8,
+        "photographer": "James Denton",
+        "filename": "photos/2025-12/James Denton/2.jpg"
+      },
+      {
+        "id": 9,
+        "photographer": "James Denton",
+        "filename": "photos/2025-12/James Denton/3.jpg"
+      },
+      {
+        "id": 10,
+        "photographer": "Jemma Ridyard",
+        "filename": "photos/2025-12/Jemma Ridyard/1.jpg"
+      },
+      {
+        "id": 11,
+        "photographer": "Jemma Ridyard",
+        "filename": "photos/2025-12/Jemma Ridyard/2.jpg"
+      },
+      {
+        "id": 12,
+        "photographer": "Jemma Ridyard",
+        "filename": "photos/2025-12/Jemma Ridyard/3.jpg"
+      },
+      {
+        "id": 13,
+        "photographer": "Kacper Chodyra",
+        "filename": "photos/2025-12/Kacper Chodyra/1.jpg"
+      },
+      {
+        "id": 14,
+        "photographer": "Kacper Chodyra",
+        "filename": "photos/2025-12/Kacper Chodyra/2.jpg"
+      },
+      {
+        "id": 15,
+        "photographer": "Kacper Chodyra",
+        "filename": "photos/2025-12/Kacper Chodyra/3.jpg"
+      },
+      {
+        "id": 16,
+        "photographer": "Kyle Plastock",
+        "filename": "photos/2025-12/Kyle Plastock/1.jpg"
+      },
+      {
+        "id": 17,
+        "photographer": "Kyle Plastock",
+        "filename": "photos/2025-12/Kyle Plastock/2.jpg"
+      },
+      {
+        "id": 18,
+        "photographer": "Kyle Plastock",
+        "filename": "photos/2025-12/Kyle Plastock/3.jpg"
+      },
+      {
+        "id": 19,
+        "photographer": "Lloyd Woodger",
+        "filename": "photos/2025-12/Lloyd Woodger/1.jpg"
+      },
+      {
+        "id": 20,
+        "photographer": "Lloyd Woodger",
+        "filename": "photos/2025-12/Lloyd Woodger/2.jpg"
+      },
+      {
+        "id": 21,
+        "photographer": "Lloyd Woodger",
+        "filename": "photos/2025-12/Lloyd Woodger/3.jpg"
+      },
+      {
+        "id": 22,
+        "photographer": "Paul Udogaranya",
+        "filename": "photos/2025-12/Paul Udogaranya/1.jpg"
+      },
+      {
+        "id": 23,
+        "photographer": "Paul Udogaranya",
+        "filename": "photos/2025-12/Paul Udogaranya/2.jpg"
+      },
+      {
+        "id": 24,
+        "photographer": "Paul Udogaranya",
+        "filename": "photos/2025-12/Paul Udogaranya/3.jpg"
+      },
+      {
+        "id": 25,
+        "photographer": "Rainer Knappe",
+        "filename": "photos/2025-12/Rainer Knappe/1.jpg"
+      },
+      {
+        "id": 26,
+        "photographer": "Rainer Knappe",
+        "filename": "photos/2025-12/Rainer Knappe/2.jpg"
+      },
+      {
+        "id": 27,
+        "photographer": "Rainer Knappe",
+        "filename": "photos/2025-12/Rainer Knappe/3.jpg"
+      },
+      {
+        "id": 28,
+        "photographer": "Raul Caramizaru",
+        "filename": "photos/2025-12/Raul Caramizaru/1.jpg"
+      },
+      {
+        "id": 29,
+        "photographer": "Raul Caramizaru",
+        "filename": "photos/2025-12/Raul Caramizaru/2.jpg"
+      },
+      {
+        "id": 30,
+        "photographer": "Raul Caramizaru",
+        "filename": "photos/2025-12/Raul Caramizaru/3.jpg"
+      },
+      {
+        "id": 31,
+        "photographer": "Thomas McPherson",
+        "filename": "photos/2025-12/Thomas McPherson/1.jpg"
+      },
+      {
+        "id": 32,
+        "photographer": "Thomas McPherson",
+        "filename": "photos/2025-12/Thomas McPherson/2.jpg"
+      },
+      {
+        "id": 33,
+        "photographer": "Thomas McPherson",
+        "filename": "photos/2025-12/Thomas McPherson/3.jpg"
+      },
+      {
+        "id": 34,
+        "photographer": "William Howe",
+        "filename": "photos/2025-12/William Howe/1.jpg"
+      },
+      {
+        "id": 35,
+        "photographer": "William Howe",
+        "filename": "photos/2025-12/William Howe/2.jpg"
+      },
+      {
+        "id": 36,
+        "photographer": "William Howe",
+        "filename": "photos/2025-12/William Howe/3.jpg"
+      }
+    ]
+  },
+  "archive": [
+    {
+      "monthName": "November 2025",
+      "winners": {
+        "gold": 201,
+        "silver": 202,
+        "bronze": 101
+      },
+      "stats": {
+        "votesCast": 12,
+        "totalVotersSnapshot": 13
+      },
+      "entries": [
+        {
+          "id": 201,
+          "photographer": "Jack Wickes",
+          "filename": "photos/2025-11/Jack/img1.jpg"
+        }
+      ]
+    }
+  ]
+}
