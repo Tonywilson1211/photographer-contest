@@ -703,6 +703,39 @@ async function deleteArchive(id) {
     }
 }
 
+async function adminCheckVotes() {
+    if (!state.activeContest) return alert("No active contest.");
+
+    const list = document.getElementById('adminVoteList');
+    list.classList.remove('hidden');
+    list.innerHTML = '<div class="text-xs text-gray-500 text-center">Loading...</div>';
+
+    const snap = await db.collection("contests").doc(state.activeContest.id).collection("votes").get();
+    const voters = new Set(snap.docs.map(d => d.id)); // ID is username
+
+    const voted = [];
+    const pending = [];
+
+    TEAM_MEMBERS.sort().forEach(m => {
+        if (voters.has(m)) voted.push(m);
+        else pending.push(m);
+    });
+
+    let html = `<div class="text-xs font-bold text-gray-400 mb-2 uppercase tracking-widest text-center">Progress: <span class="text-white">${voted.length}</span> / ${TEAM_MEMBERS.length}</div>`;
+    html += `<div class="grid grid-cols-2 gap-2 text-xs">`;
+
+    voted.forEach(n => {
+        html += `<div class="flex items-center gap-2 text-green-400"><span class="text-sm">✅</span> ${n}</div>`;
+    });
+
+    pending.forEach(n => {
+        html += `<div class="flex items-center gap-2 text-red-400 opacity-60"><span class="text-sm">⏳</span> ${n}</div>`;
+    });
+
+    html += `</div>`;
+    list.innerHTML = html;
+}
+
 async function adminFinalizeArchive() {
     if(!state.activeContest || !confirm("Are you sure? This will calculate votes and end the contest.")) return;
 

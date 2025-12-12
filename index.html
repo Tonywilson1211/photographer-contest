@@ -48,6 +48,7 @@
                 <button onclick="attemptLogin()" class="w-full bg-[#94c120]/10 border border-[#94c120] text-white font-bold py-4 rounded-xl shadow-[0_0_15px_rgba(148,193,32,0.3)] hover:bg-[#94c120]/20 transition transform active:scale-95 flex flex-col items-center justify-center text-center">
                     Enter Dashboard
                 </button>
+                <p class="text-[10px] text-gray-500 mt-4 font-mono opacity-50 text-center">v1.0.1</p>
             </div>
         </div>
     </div>
@@ -179,6 +180,13 @@
 
                 <div class="p-4 bg-gray-900 rounded-xl border border-gray-700">
                     <h3 class="font-bold text-white mb-2">Contest Control</h3>
+                    
+                    <!-- NEW: Vote Tracking -->
+                    <button onclick="adminCheckVotes()" class="w-full mb-4 bg-blue-900/30 text-blue-400 border border-blue-500/30 py-3 rounded-lg font-bold hover:bg-blue-900/50 transition">
+                        📊 Check Voting Status
+                    </button>
+                    <div id="adminVoteList" class="hidden mb-4 bg-black/40 p-4 rounded-lg border border-gray-700 max-h-48 overflow-y-auto"></div>
+
                     <p class="text-xs text-gray-400 mb-4">Click below to tally votes, declare winners, and archive this month.</p>
                     <button id="btnEndContest" onclick="adminFinalizeArchive()" class="w-full bg-[#94c120]/20 text-[#94c120] border border-[#94c120] py-4 rounded-xl font-bold hover:bg-[#94c120] hover:text-black transition disabled:opacity-50 disabled:cursor-not-allowed">
                         🏁 Tally Votes & Close Contest
