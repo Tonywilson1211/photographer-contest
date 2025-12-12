@@ -2,141 +2,190 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NicheCom Photo Contest</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Photo of the Month</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        .fade-in { animation: fadeIn 0.5s ease-in; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        #dynamicBg { transition: background-image 1s ease-in-out; }
-        .zoom-in { animation: zoomIn 0.2s ease-out; }
-        @keyframes zoomIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-    </style>
-</head>
-<body class="bg-gray-900 text-gray-100 font-sans min-h-screen flex flex-col relative overflow-x-hidden">
-
-    <div id="dynamicBg" class="fixed inset-0 z-0 bg-cover bg-center opacity-40"></div>
-    <div class="fixed inset-0 z-0 bg-gradient-to-t from-gray-900 via-gray-900/90 to-gray-900/80"></div>
-
-    <div id="landingPage" class="relative z-10 flex-grow flex flex-col items-center justify-center p-6 text-center fade-in">
-        <h1 class="text-6xl font-bold mb-2 tracking-tighter text-white drop-shadow-2xl">Photo of the Month</h1>
-        <p class="text-xl text-gray-300 mb-8 font-light">Orbital Area 2 Team</p>
-
-        <div id="statusBadge" class="mb-10 px-6 py-2 rounded-full bg-black/50 border border-gray-600 backdrop-blur-md text-sm font-mono text-blue-300 shadow-lg">
-            Checking Status...
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-6xl">
-            <button id="mainActionBtn" onclick="enterCurrentMonth()" class="bg-blue-600/90 hover:bg-blue-600 p-8 rounded-2xl shadow-2xl transition border border-blue-400/30 group hover:-translate-y-1 backdrop-blur-sm">
-                <div class="text-4xl mb-3">📸</div>
-                <h2 id="mainBtnTitle" class="text-xl font-bold text-white">Loading...</h2>
-            </button>
-
-            <button onclick="showUpload()" class="bg-gray-800/80 hover:bg-gray-700/90 p-8 rounded-2xl shadow-2xl transition border border-gray-600 group hover:-translate-y-1 backdrop-blur-sm">
-                <div class="text-4xl mb-3">📤</div>
-                <h2 class="text-xl font-bold text-white">Upload Entry</h2>
-            </button>
-
-            <button onclick="showArchiveHub()" class="bg-gray-800/80 hover:bg-gray-700/90 p-8 rounded-2xl shadow-2xl transition border border-gray-600 group hover:-translate-y-1 backdrop-blur-sm">
-                <div class="text-4xl mb-3">🏛️</div>
-                <h2 class="text-xl font-bold text-white">The Archives</h2>
-            </button>
-
-            <button onclick="showLeaderboard()" class="bg-yellow-600/80 hover:bg-yellow-500/90 p-8 rounded-2xl shadow-2xl transition border border-yellow-500/30 group hover:-translate-y-1 backdrop-blur-sm">
-                <div class="text-4xl mb-3">👑</div>
-                <h2 class="text-xl font-bold text-white">Leaderboard</h2>
-            </button>
-        </div>
-    </div>
-
-    <div id="leaderboardPage" class="hidden relative z-10 flex-grow flex flex-col items-center p-8 fade-in w-full max-w-4xl mx-auto">
-        <h2 class="text-4xl font-bold mb-2 text-yellow-500">All-Time Standings</h2>
-        <p class="text-gray-400 mb-8">Points: 1st (3pts), 2nd (2pts), 3rd (1pt)</p>
+        .fade-in { animation: fadeIn 0.4s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         
-        <div class="w-full bg-gray-800/80 backdrop-blur-md rounded-2xl border border-gray-700 overflow-hidden shadow-2xl">
-            <div class="grid grid-cols-12 bg-gray-900/50 p-4 font-bold text-gray-400 text-sm uppercase tracking-wider">
-                <div class="col-span-2 text-center">Rank</div>
-                <div class="col-span-6">Photographer</div>
-                <div class="col-span-2 text-center">Wins (G/S/B)</div>
-                <div class="col-span-2 text-center text-white">Total Pts</div>
+        .glass { background: rgba(17, 24, 39, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .glass-nav { background: rgba(17, 24, 39, 0.95); backdrop-filter: blur(12px); border-top: 1px solid rgba(255, 255, 255, 0.1); }
+        
+        /* Hide scrollbar for clean UI */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #111827; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+
+        /* Mobile safe area */
+        body { padding-bottom: 80px; } 
+    </style>
+    
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans min-h-screen select-none">
+
+    <div id="dynamicBg" class="fixed inset-0 z-0 bg-cover bg-center opacity-60 transition-all duration-1000"></div>
+    <div id="gradientOverlay" class="fixed inset-0 z-0 bg-gradient-to-t from-gray-900 via-gray-900/70 to-gray-900/50 transition-all duration-1000"></div>
+
+    <div id="loginScreen" class="fixed inset-0 z-50 flex items-center justify-center p-6 bg-gray-900/80 backdrop-blur-sm">
+        <div class="glass p-8 rounded-2xl max-w-sm w-full shadow-2xl text-center fade-in">
+            <div class="text-5xl mb-4">📸</div>
+            <h1 class="text-2xl font-bold text-white tracking-tight mb-1">Photo of the Month</h1>
+            <p class="text-[#94c120] text-sm mb-8 uppercase tracking-widest">Orbital Area 2 Team</p>
+
+            <div class="space-y-4">
+                <select id="loginName" onchange="checkPinRequirement()" class="w-full bg-gray-800/50 border border-gray-600 text-white rounded-xl p-4 text-lg focus:ring-2 focus:ring-[#94c120] outline-none appearance-none text-center font-bold">
+                    <option value="" disabled selected>Tap to select name...</option>
+                </select>
+
+                <div id="pinSection" class="hidden">
+                    <input id="loginPin" type="tel" placeholder="Enter PIN" class="w-full bg-gray-800 border border-red-500/50 text-white rounded-xl p-4 text-center tracking-[1em] text-xl outline-none focus:border-red-500">
+                </div>
+
+                <button onclick="attemptLogin()" class="w-full bg-[#94c120]/10 border border-[#94c120] text-white font-bold py-4 rounded-xl shadow-[0_0_15px_rgba(148,193,32,0.3)] hover:bg-[#94c120]/20 transition transform active:scale-95 flex flex-col items-center justify-center text-center">
+                    Enter Dashboard
+                </button>
             </div>
-            <div id="leaderboardGrid"></div>
         </div>
-        <button onclick="goHome()" class="mt-12 text-gray-400 hover:text-white underline">Back to Home</button>
     </div>
 
-    <div id="archiveHub" class="hidden relative z-10 flex-grow flex flex-col items-center p-8 fade-in w-full max-w-6xl mx-auto">
-        <h2 class="text-4xl font-bold mb-8">Previous Collections</h2>
-        <button onclick="loadAllArchives()" class="w-full max-w-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-6 rounded-xl shadow-lg mb-10 transform hover:scale-105 transition border border-purple-400/30">
-            ✨ View All Images (Full History)
-        </button>
-        <div class="w-full border-t border-gray-700 mb-8"></div>
-        <div id="archiveGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full"></div>
-        <button onclick="goHome()" class="mt-12 text-gray-400 hover:text-white underline">Back to Home</button>
-    </div>
-
-    <div id="app" class="hidden relative z-10 container mx-auto px-4 py-8 fade-in">
-        <header class="flex flex-col gap-4 mb-10 border-b border-gray-700 pb-6">
-            <div class="flex justify-between items-start">
-                <div>
-                    <button onclick="goHome()" class="text-xs text-gray-400 hover:text-white mb-2">← Back to Menu</button>
-                    <h1 id="contestTitle" class="text-3xl font-bold text-white">Gallery</h1>
-                    <p id="contestSubtitle" class="text-blue-400 mt-1"></p>
-                </div>
-                <div class="flex gap-2">
-                    <button id="adminControls" onclick="openAdminModal()" class="hidden bg-red-600 hover:bg-red-500 text-white text-xs px-3 py-1 rounded h-8">⚙️ Close Voting</button>
-                    <button id="submitBtn" onclick="submitVotes()" class="hidden bg-blue-600 px-6 py-2 rounded-full font-bold shadow-lg hover:bg-blue-500 transition">Submit Votes (<span id="voteCountBadge">0/3</span>)</button>
-                </div>
+    <div id="mainApp" class="hidden relative z-10 fade-in flex flex-col min-h-screen">
+        
+        <header class="px-6 py-4 flex justify-between items-center sticky top-0 z-40 bg-gray-900/80 backdrop-blur-md">
+            <div>
+                <h2 class="text-lg font-bold text-white leading-tight">Orbital Area 2 <span class="text-[#94c120]">Team Photos</span></h2>
+                <p class="text-xs text-gray-400">Hello, <span id="userNameDisplay" class="text-white font-bold">User</span></p>
             </div>
-            <div id="filterBar" class="hidden flex flex-wrap gap-2 items-center bg-gray-800/50 p-2 rounded-lg backdrop-blur-sm self-start">
-                <span class="text-xs text-gray-400 px-2 mr-2">FILTER BY:</span>
-                <button id="filterGold" onclick="toggleFilter(1)" class="px-4 py-1 rounded-full border border-gray-600 text-sm hover:bg-gray-700 transition opacity-50">🏆 1st Place</button>
-                <button id="filterSilver" onclick="toggleFilter(2)" class="px-4 py-1 rounded-full border border-gray-600 text-sm hover:bg-gray-700 transition opacity-50">🥈 2nd Place</button>
-                <button id="filterBronze" onclick="toggleFilter(3)" class="px-4 py-1 rounded-full border border-gray-600 text-sm hover:bg-gray-700 transition opacity-50">🥉 3rd Place</button>
-                <button onclick="resetFilters()" class="px-4 py-1 text-xs text-gray-500 hover:text-white underline ml-2">Reset</button>
+            <div class="flex gap-2">
+                <button id="navAdmin" onclick="showAdminPanel()" class="hidden bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider hover:bg-red-500 hover:text-white transition">Admin</button>
+                <button onclick="location.reload()" class="bg-gray-800 text-gray-400 p-2 rounded-full hover:text-white"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg></button>
             </div>
         </header>
-        <div id="galleryGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 pb-20"></div>
+
+        <main class="flex-grow container mx-auto px-4 py-2 mb-20">
+            
+            <div id="view-landing" class="view-section hidden flex flex-col gap-4">
+                <div class="glass p-6 rounded-2xl border border-gray-700/50 text-center">
+                    <span id="homeStatusBadge" class="inline-block px-3 py-1 rounded-full bg-gray-800 text-gray-400 text-xs font-bold uppercase tracking-wider mb-3">Loading...</span>
+                    <h1 id="homeMainTitle" class="text-3xl font-bold text-white mb-2">Connecting...</h1>
+                    <p id="homeMainDesc" class="text-gray-400 text-sm">Synchronizing with Cloud...</p>
+                </div>
+
+                <button onclick="navTo('gallery')" class="bg-[#94c120]/10 border border-[#94c120] p-6 rounded-2xl shadow-[0_0_15px_rgba(148,193,32,0.3)] text-center relative overflow-hidden group flex flex-col items-center justify-center">
+                    <div class="absolute right-[-20px] top-[-20px] text-8xl opacity-5 rotate-12 group-hover:rotate-0 transition duration-500 text-white">📸</div>
+                    <h2 class="text-2xl font-bold text-white relative z-10">Go to Gallery</h2>
+                    <p class="text-[#94c120] text-sm relative z-10">View active entries & vote</p>
+                </button>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <button onclick="navTo('leaderboard')" class="glass p-4 rounded-xl hover:bg-gray-800 transition flex flex-col items-center justify-center text-center h-32">
+                        <div class="mb-2"><svg class="w-8 h-8 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg></div>
+                        <div class="font-bold text-white">Rankings</div>
+                        <div class="text-[10px] text-gray-500 mt-1">Season Standings</div>
+                    </button>
+                    <button onclick="navTo('archives')" class="glass p-4 rounded-xl hover:bg-gray-800 transition flex flex-col items-center justify-center text-center h-32">
+                        <div class="mb-2"><svg class="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
+                        <div class="font-bold text-white">History</div>
+                        <div class="text-[10px] text-gray-500 mt-1">Past Winners</div>
+                    </button>
+                </div>
+            </div>
+
+            <div id="view-gallery" class="view-section hidden">
+                <div id="galleryHeader" class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold" id="galleryTitle">Gallery</h2>
+                    <div id="voteCounter" class="px-3 py-1 bg-gray-800 rounded-full text-xs font-mono text-gray-400">Votes: 0/3</div>
+                </div>
+
+                <div id="galleryGrid" class="grid grid-cols-3 md:grid-cols-4 gap-2"></div>
+                
+                <div class="h-24"></div> <button id="submitBtn" onclick="submitVotes()" class="hidden fixed bottom-24 right-6 left-6 md:left-auto md:w-64 bg-[#94c120] hover:bg-[#82a81c] text-black font-bold py-4 rounded-full shadow-[0_0_20px_rgba(148,193,32,0.4)] transition transform hover:scale-105 z-30">
+                    Submit 3 Votes ✅
+                </button>
+            </div>
+
+            <div id="view-archives" class="view-section hidden">
+                <button onclick="loadMegaArchive()" class="w-full mb-6 bg-[#94c120]/20 border border-[#94c120]/30 text-[#94c120] py-3 rounded-xl font-bold hover:bg-[#94c120] hover:text-white transition">
+                    ✨ View "All-Time" Grid
+                </button>
+                
+                <div id="archiveGrid" class="space-y-4"></div>
+                
+                <div id="megaArchive" class="hidden">
+                    <div class="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
+                         <button onclick="renderArchives()" class="px-4 py-2 bg-gray-800 rounded-lg text-sm text-gray-400 hover:text-white whitespace-nowrap">← Folders</button>
+                         <button id="filter-all" onclick="filterMega('all')" class="px-4 py-2 bg-[#94c120] text-white rounded-lg text-sm font-bold shadow-[0_0_10px_#94c120] whitespace-nowrap">All Photos</button>
+                         <button id="filter-winners" onclick="filterMega('winners')" class="px-4 py-2 bg-gray-800 text-gray-400 rounded-lg text-sm font-bold whitespace-nowrap">Winners 🏆</button>
+                         <button id="filter-mine" onclick="filterMega('mine')" class="px-4 py-2 bg-gray-800 text-gray-400 rounded-lg text-sm font-bold whitespace-nowrap">My Entries</button>
+                    </div>
+                    <div id="megaGrid" class="grid grid-cols-3 md:grid-cols-5 gap-1"></div>
+                </div>
+
+                <div id="archiveDetailView" class="hidden"></div>
+            </div>
+
+            <div id="view-leaderboard" class="view-section hidden">
+                <h2 class="text-2xl font-bold mb-4 text-yellow-500">Season Standings</h2>
+                <div class="bg-gray-800/50 rounded-2xl overflow-hidden border border-gray-700" id="leaderboardGrid">
+                    </div>
+            </div>
+
+        </main>
+
+        <nav class="fixed bottom-0 w-full glass-nav z-40 pb-safe">
+            <div class="flex justify-around items-center h-16 max-w-lg mx-auto">
+                <button onclick="navTo('landing')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-gray-500 transition" data-target="landing">
+                    <span class="mb-1"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg></span>
+                    <span class="text-[10px] font-bold uppercase">Home</span>
+                </button>
+                <button onclick="navTo('gallery')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-gray-500 transition" data-target="gallery">
+                    <span class="mb-1"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg></span>
+                    <span class="text-[10px] font-bold uppercase">Vote</span>
+                </button>
+                <button onclick="navTo('leaderboard')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-gray-500 transition" data-target="leaderboard">
+                    <span class="mb-1"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg></span>
+                    <span class="text-[10px] font-bold uppercase">Rank</span>
+                </button>
+                <button onclick="navTo('archives')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-gray-500 transition" data-target="archives">
+                    <span class="mb-1"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></span>
+                    <span class="text-[10px] font-bold uppercase">History</span>
+                </button>
+            </div>
+        </nav>
+
     </div>
 
-    <div id="uploadPage" class="hidden relative z-10 flex-grow flex flex-col items-center justify-center p-6 fade-in">
-        <div class="bg-gray-800 p-8 rounded-2xl max-w-2xl w-full border border-gray-700 text-center shadow-2xl">
-            <h2 class="text-3xl font-bold mb-4">Upload Phase</h2>
-            <p class="text-gray-400 mb-6">Send your top 3 images to Anthony.</p>
-            <a href="mailto:anthony.wilson@nichecom.co.uk" class="block w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl mb-4 transition">Email Entries</a>
-            <button onclick="goHome()" class="text-gray-400 underline">Back</button>
-        </div>
+    <div id="lightbox" onclick="if(event.target === this) this.classList.add('hidden')" class="hidden fixed inset-0 z-[60] bg-black/95 flex items-center justify-center p-2 cursor-zoom-out backdrop-blur-sm">
+        <img id="lightboxImg" class="max-w-full max-h-screen object-contain rounded-lg shadow-2xl" src="">
     </div>
 
-    <div id="loginModal" class="hidden fixed inset-0 z-50 bg-black/95 flex items-center justify-center fade-in">
-        <div class="bg-gray-800 p-8 rounded-xl max-w-sm w-full border border-gray-700">
-            <h2 class="text-xl font-bold mb-4 text-white">Identify Yourself</h2>
-            <select id="userSelect" class="w-full p-3 mb-6 bg-gray-900 border border-gray-600 rounded text-white"></select>
-            <div class="flex gap-3">
-                <button onclick="goHome()" class="flex-1 bg-gray-700 py-2 rounded">Cancel</button>
-                <button onclick="login()" class="flex-1 bg-blue-600 py-2 rounded font-bold">Enter</button>
+    <div id="view-admin" class="hidden fixed inset-0 z-[70] bg-black/90 flex items-center justify-center p-4">
+        <div class="bg-gray-800 w-full max-w-lg rounded-2xl border border-gray-700 p-6 shadow-2xl relative">
+            <button onclick="document.getElementById('view-admin').classList.add('hidden')" class="absolute top-4 right-4 text-gray-400 text-2xl">&times;</button>
+            <h2 class="text-2xl font-bold text-white mb-6">Admin Console</h2>
+            
+            <div class="space-y-6">
+                <div class="bg-gray-900 p-4 rounded-xl border border-gray-700">
+                    <label class="text-xs text-gray-400 uppercase font-bold">New Month</label>
+                    <div class="flex gap-2 mt-2">
+                        <input id="newContestName" placeholder="Name (e.g. March)" class="bg-gray-800 text-white p-3 rounded-lg w-1/2 outline-none">
+                        <input id="newContestId" placeholder="ID (2026-03)" class="bg-gray-800 text-white p-3 rounded-lg w-1/2 outline-none">
+                    </div>
+                    <button onclick="adminCreateContest()" class="w-full mt-2 bg-[#94c120] hover:bg-[#82a81c] text-black font-bold py-3 rounded-lg">Create Contest</button>
+                </div>
+
+                <div class="p-4 bg-gray-900 rounded-xl border border-gray-700">
+                    <h3 class="font-bold text-white mb-2">Contest Control</h3>
+                    <p class="text-xs text-gray-400 mb-4">Click below to tally votes, declare winners, and archive this month.</p>
+                    <button id="btnEndContest" onclick="adminFinalizeArchive()" class="w-full bg-[#94c120]/20 text-[#94c120] border border-[#94c120] py-4 rounded-xl font-bold hover:bg-[#94c120] hover:text-black transition disabled:opacity-50 disabled:cursor-not-allowed">
+                        🏁 Tally Votes & Close Contest
+                    </button>
+                </div>
             </div>
         </div>
-    </div>
-
-    <div id="adminModal" class="hidden fixed inset-0 z-50 bg-black/95 flex items-center justify-center fade-in">
-        <div class="bg-gray-800 p-8 rounded-xl max-w-lg w-full border border-red-500/50">
-            <h2 class="text-2xl font-bold mb-4 text-white">⚙️ Close Contest & Generate JSON</h2>
-            <div class="grid grid-cols-3 gap-4 mb-4">
-                <div><label class="text-xs text-yellow-500">Gold ID</label><input id="adminGold" type="number" class="w-full bg-gray-900 border border-gray-700 p-2 rounded text-white"></div>
-                <div><label class="text-xs text-gray-400">Silver ID</label><input id="adminSilver" type="number" class="w-full bg-gray-900 border border-gray-700 p-2 rounded text-white"></div>
-                <div><label class="text-xs text-orange-500">Bronze ID</label><input id="adminBronze" type="number" class="w-full bg-gray-900 border border-gray-700 p-2 rounded text-white"></div>
-            </div>
-            <div class="mb-6"><label class="text-xs text-blue-400">Total Votes</label><input id="adminVotes" type="number" class="w-full bg-gray-900 border border-gray-700 p-2 rounded text-white"></div>
-            <button onclick="generateCloseJSON()" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded mb-4">Generate Code</button>
-            <textarea id="adminOutput" class="hidden w-full h-48 bg-black text-green-400 font-mono text-xs p-4 rounded border border-gray-700" readonly></textarea>
-            <button onclick="hideAll(); document.getElementById('app').classList.remove('hidden');" class="mt-4 text-gray-500 hover:text-white underline w-full text-center">Close Window</button>
-        </div>
-    </div>
-
-    <div id="lightbox" onclick="closeLightbox()" class="hidden fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 fade-in cursor-zoom-out">
-        <img id="lightboxImg" src="" class="max-w-full max-h-screen object-contain rounded shadow-2xl zoom-in" onclick="event.stopPropagation()">
-        <button onclick="closeLightbox()" class="absolute top-4 right-4 text-white text-4xl hover:text-gray-300">&times;</button>
     </div>
 
     <script src="app.js"></script>

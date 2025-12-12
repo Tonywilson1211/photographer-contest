@@ -1,532 +1,709 @@
-// STATE
-let state = {
-    currentUser: null,
-    data: null,
-    currentPhase: 'preview',
-    hasVotedLocally: false,
-    activeArchiveMonth: null,
-    activeViewList: [], 
-    votes: { 1: null, 2: null, 3: null },
-    filters: { 1: false, 2: false, 3: false }
+// --- 1. FIREBASE SETUP ---
+const firebaseConfig = {
+  apiKey: "AIzaSyBIvsnCd2apt1rNQAY1FESN_enD_UOte6w",
+  authDomain: "photographer-contest.firebaseapp.com",
+  projectId: "photographer-contest",
+  storageBucket: "photographer-contest.firebasestorage.app",
+  messagingSenderId: "147304996816",
+  appId: "1:147304996816:web:f41d39a37485afa010a3d5"
 };
 
-// INIT
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const auth = firebase.auth();
+
+// --- 2. STATE ---
+let state = {
+    currentUser: localStorage.getItem('photoUser') || null,
+    isAdmin: false,
+    activeContest: null,
+    entries: [],
+    archives: [],
+    megaEntries: [],
+    shuffledEntries: [],
+    votes: { 1: null, 2: null, 3: null },
+    hasVotedLocally: false
+};
+
+let entriesUnsubscribe = null;
+
+const TEAM_MEMBERS = [
+    "Ivan Pecek", "Jack Wickes", "James Wilson", "James Denton",
+    "Jemma Ridyard", "Kacper Chodyra", "Kyle Plastock", "Lloyd Woodger",
+    "Paul Udogaranya", "Rainer Knappe", "Raul Caramizaru",
+    "Thomas McPherson", "William Howe", "Anthony Wilson"
+];
+
+// --- 3. INIT ---
 document.addEventListener('DOMContentLoaded', () => {
-    fetch('database.json')
-        .then(res => res.json())
-        .then(json => {
-            state.data = json;
-            checkLocalVoteHistory();
-            determinePhase();
-            setLandingBackground();
-        })
-        .catch(err => console.error("Database error:", err));
+    populateLoginDropdown();
+    if (state.currentUser) {
+        document.getElementById('loginName').value = state.currentUser;
+        checkPinRequirement();
+    }
 });
 
-// --- LEADERBOARD LOGIC ---
-function showLeaderboard() {
-    hideAll();
-    document.getElementById('leaderboardPage').classList.remove('hidden');
+// --- 4. AUTH & NAVIGATION ---
+function populateLoginDropdown() {
+    const s = document.getElementById('loginName');
+    TEAM_MEMBERS.sort().forEach(n => {
+        const o = document.createElement('option');
+        o.value = n; o.textContent = n;
+        s.appendChild(o);
+    });
+}
+
+function checkPinRequirement() {
+    const n = document.getElementById('loginName').value;
+    document.getElementById('pinSection').classList.toggle('hidden', n !== "Anthony Wilson");
+}
+
+function attemptLogin() {
+    const name = document.getElementById('loginName').value;
+    if (!name) return;
     
-    let scores = {};
-    state.data.teamMembers.forEach(member => {
-        scores[member] = { name: member, total: 0, gold: 0, silver: 0, bronze: 0 };
-    });
-
-    state.data.archive.forEach(month => {
-        const winners = month.winners;
-        if (!winners) return;
-
-        const findName = (id) => {
-            const entry = month.entries.find(e => e.id === id);
-            return entry ? entry.photographer : null;
-        };
-
-        const goldName = findName(winners.gold);
-        const silverName = findName(winners.silver);
-        const bronzeName = findName(winners.bronze);
-
-        if (goldName && scores[goldName]) { scores[goldName].total += 3; scores[goldName].gold++; }
-        if (silverName && scores[silverName]) { scores[silverName].total += 2; scores[silverName].silver++; }
-        if (bronzeName && scores[bronzeName]) { scores[bronzeName].total += 1; scores[bronzeName].bronze++; }
-    });
-
-    const sorted = Object.values(scores).sort((a, b) => b.total - a.total);
-    const grid = document.getElementById('leaderboardGrid');
-    grid.innerHTML = '';
-
-    sorted.forEach((p, index) => {
-        let rowClass = "p-4 border-b border-gray-800 grid grid-cols-12 items-center hover:bg-gray-800/50 transition";
-        let rankDisplay = `<span class="text-gray-500">#${index + 1}</span>`;
-        
-        if (index === 0) rankDisplay = `<span class="text-yellow-500 font-bold text-xl">🥇</span>`;
-        if (index === 1) rankDisplay = `<span class="text-gray-300 font-bold text-xl">🥈</span>`;
-        if (index === 2) rankDisplay = `<span class="text-orange-500 font-bold text-xl">🥉</span>`;
-
-        if (p.total === 0 && index > 2) return; // Optional: Hide people with 0 points if not top 3
-
-        grid.innerHTML += `
-            <div class="${rowClass}">
-                <div class="col-span-2 text-center">${rankDisplay}</div>
-                <div class="col-span-6 font-medium text-white">${p.name}</div>
-                <div class="col-span-2 text-center text-xs text-gray-500 tracking-widest">${p.gold} / ${p.silver} / ${p.bronze}</div>
-                <div class="col-span-2 text-center text-xl font-bold text-blue-400">${p.total}</div>
-            </div>
-        `;
-    });
-}
-
-// --- HELPER: SHUFFLE ---
-function shuffleArray(array) {
-    for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
+    if (name === "Anthony Wilson") {
+        if (document.getElementById('loginPin').value !== "673191") return alert("Wrong PIN");
+        state.isAdmin = true;
     }
-    return array;
+
+    state.currentUser = name;
+    localStorage.setItem('photoUser', name);
+    
+    auth.signInAnonymously().then(() => {
+        document.getElementById('loginScreen').classList.add('hidden');
+        document.getElementById('mainApp').classList.remove('hidden');
+        document.getElementById('userNameDisplay').textContent = name.split(' ')[0]; 
+        if (state.isAdmin) document.getElementById('navAdmin').classList.remove('hidden');
+        
+        startDataSync(); 
+        navTo('landing');
+    });
 }
 
-// --- LIGHTBOX ---
-function viewImage(url) {
-    const box = document.getElementById('lightbox');
-    const img = document.getElementById('lightboxImg');
-    img.src = url;
-    box.classList.remove('hidden');
+function navTo(sectionId) {
+    document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+    
+    const target = document.getElementById(`view-${sectionId}`);
+    if (target) target.classList.remove('hidden');
+
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        const isTarget = btn.dataset.target === sectionId;
+        btn.className = `nav-btn flex flex-col items-center justify-center w-full h-full transition ${isTarget ? 'text-[#94c120]' : 'text-gray-600'}`;
+        const icon = btn.querySelector('span');
+        if(isTarget) icon.classList.add('drop-shadow-[0_0_8px_rgba(148,193,32,0.5)]');
+        else icon.classList.remove('drop-shadow-[0_0_8px_rgba(148,193,32,0.5)]');
+    });
+
+    if (sectionId === 'gallery') renderGallery();
+    if (sectionId === 'archives') renderArchives();
+    if (sectionId === 'leaderboard') renderLeaderboard();
 }
 
-function closeLightbox() {
-    document.getElementById('lightbox').classList.add('hidden');
+// --- 5. DATA ENGINE (FIXED) ---
+function startDataSync() {
+    db.collection("contests").onSnapshot(snapshot => {
+        if (snapshot.empty) {
+            state.activeContest = null;
+            state.entries = [];
+            if(entriesUnsubscribe) entriesUnsubscribe();
+            updateHomeUI(null); 
+            renderGallery();
+            return;
+        }
+
+        const allContests = snapshot.docs.map(d => ({...d.data(), id: d.id}));
+        allContests.sort((a, b) => b.id.localeCompare(a.id));
+
+        const latest = allContests[0];
+        
+        // Check if ID changed to force re-sync
+        const idChanged = !state.activeContest || state.activeContest.id !== latest.id;
+
+        if (latest.status === 'closed') {
+             state.activeContest = null;
+             state.entries = [];
+             if(entriesUnsubscribe) entriesUnsubscribe();
+             updateHomeUI(null);
+             renderGallery();
+        } else {
+             state.activeContest = latest;
+             state.hasVotedLocally = !!localStorage.getItem(`voted_${latest.id}`);
+             updateHomeUI(latest);
+             if(idChanged) syncEntries(latest.id);
+        }
+    });
+
+    // Sync Archives separateley
+    db.collection("archives").onSnapshot(snap => {
+        state.archives = snap.docs.map(d => d.data()).sort((a,b) => b.id.localeCompare(a.id));
+    });
 }
 
-// --- VISUALS ---
-function setLandingBackground() {
-    if (state.data.archive && state.data.archive.length > 0) {
-        const lastMonth = state.data.archive[0];
-        const winnerId = lastMonth.winners.gold;
-        const winnerEntry = lastMonth.entries.find(e => e.id === winnerId);
-        if (winnerEntry) {
-            document.getElementById('dynamicBg').style.backgroundImage = `url('${winnerEntry.filename}')`;
+function syncEntries(contestId) {
+    if (entriesUnsubscribe) entriesUnsubscribe();
+
+    entriesUnsubscribe = db.collection("contests").doc(contestId).collection("entries").onSnapshot(snap => {
+        state.entries = snap.docs.map(d => d.data());
+        
+        // Shuffle only if needed (on first load or reset)
+        if (state.shuffledEntries.length === 0 || state.shuffledEntries.length !== state.entries.length) {
+            state.shuffledEntries = [...state.entries];
+            for (let i = state.shuffledEntries.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [state.shuffledEntries[i], state.shuffledEntries[j]] = [state.shuffledEntries[j], state.shuffledEntries[i]];
+            }
+        }
+        
+        if (!document.getElementById('view-gallery').classList.contains('hidden')) {
+            renderGallery();
+        }
+    });
+}
+
+// --- 6. UI UPDATERS ---
+function updateHomeUI(contest) {
+    const title = document.getElementById('homeMainTitle');
+    const badge = document.getElementById('homeStatusBadge');
+    const desc = document.getElementById('homeMainDesc');
+    const endBtn = document.getElementById('btnEndContest');
+
+    if (!contest || contest.status === 'closed') {
+        title.textContent = "No Contest Active";
+        badge.textContent = "Idle";
+        badge.className = "inline-block px-3 py-1 rounded-full bg-gray-800 text-gray-500 text-xs font-bold uppercase tracking-wider mb-3";
+        desc.textContent = "Check back later or view archives.";
+        
+        if(endBtn) {
+            endBtn.disabled = true;
+            endBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+        return;
+    }
+
+    // Active Contest Logic
+    if(endBtn) {
+        endBtn.disabled = false;
+        endBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+
+    title.textContent = contest.monthName;
+    
+    if (contest.status === 'voting') {
+        if (state.hasVotedLocally) {
+            badge.textContent = "Votes Submitted";
+            badge.className = "inline-block px-3 py-1 rounded-full bg-green-900/50 text-green-400 text-xs font-bold uppercase tracking-wider mb-3";
+            desc.textContent = "Thanks for voting! View the gallery.";
+        } else {
+            badge.textContent = "Voting Open";
+            badge.className = "inline-block px-3 py-1 rounded-full bg-[#94c120]/20 text-[#94c120] text-xs font-bold uppercase tracking-wider mb-3";
+            desc.textContent = "Tap 'Go to Gallery' to cast your votes.";
         }
     }
 }
 
-// --- PHASE LOGIC ---
-function checkLocalVoteHistory() {
-    if (!state.data.activeContest) return;
-    const key = `voted_${state.data.activeContest.monthName}`;
-    if (localStorage.getItem(key)) {
-        state.hasVotedLocally = true;
-    }
-}
-
-function determinePhase() {
-    const dbStatus = state.data.config.status;
-    
-    if (state.hasVotedLocally) {
-        state.currentPhase = 'voted';
-        updateStatusBadge(`✅ You have voted for ${state.data.activeContest.monthName}`, 'green');
-        document.getElementById('mainBtnTitle').textContent = "View Gallery (Voted)";
-        document.getElementById('mainActionBtn').onclick = () => enterCurrentMonth();
-        
-    } else if (dbStatus === 'voting') {
-        state.currentPhase = 'voting';
-        updateStatusBadge(`🗳️ Voting Open: ${state.data.activeContest.monthName}`, 'blue');
-        document.getElementById('mainBtnTitle').textContent = "Vote Now";
-        document.getElementById('mainActionBtn').onclick = () => {
-            initDropdown();
-            hideAll();
-            document.getElementById('loginModal').classList.remove('hidden');
-        };
-
-    } else {
-        state.currentPhase = 'preview';
-        updateStatusBadge(`📅 Upload / Preview Phase`, 'gray');
-        document.getElementById('mainBtnTitle').textContent = "Preview Current Gallery";
-        document.getElementById('mainActionBtn').onclick = () => enterCurrentMonth();
-    }
-}
-
-function updateStatusBadge(text, color) {
-    const el = document.getElementById('statusBadge');
-    el.textContent = text;
-    let colorClasses = "bg-gray-800 border-gray-600 text-gray-300";
-    if (color === 'blue') colorClasses = "bg-blue-900/50 border-blue-500 text-blue-300 shadow-[0_0_15px_rgba(59,130,246,0.5)]";
-    if (color === 'green') colorClasses = "bg-green-900/50 border-green-500 text-green-300";
-    el.className = `mb-10 px-6 py-2 rounded-full border backdrop-blur-md text-sm font-mono shadow-lg ${colorClasses}`;
-}
-
-// --- NAVIGATION ---
-function showArchiveHub() {
-    hideAll();
-    document.getElementById('archiveHub').classList.remove('hidden');
-    
-    const grid = document.getElementById('archiveGrid');
-    grid.innerHTML = '';
-    
-    state.data.archive.forEach((arch, index) => {
-        const btn = document.createElement('button');
-        btn.className = "bg-gray-800 p-6 rounded-xl border border-gray-700 hover:bg-gray-700 hover:border-gray-500 transition text-left group shadow-lg";
-        btn.onclick = () => loadArchiveMonth(index);
-        
-        const goldId = arch.winners.gold;
-        const goldEntry = arch.entries.find(e => e.id === goldId);
-        const thumb = goldEntry ? goldEntry.filename : '';
-
-        const voters = arch.stats.votesCast;
-        const totalPossible = arch.stats.totalVotersSnapshot || 13;
-        const percent = Math.round((voters / totalPossible) * 100);
-
-        btn.innerHTML = `
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="text-xl font-bold text-white group-hover:text-blue-400 transition">${arch.monthName}</h3>
-                <span class="text-xs bg-gray-900 px-2 py-1 rounded text-gray-500 border border-gray-800">${percent}% Turnout</span>
-            </div>
-            ${thumb ? `<div class="h-32 w-full bg-cover bg-center rounded-lg opacity-60 group-hover:opacity-100 transition duration-500" style="background-image: url('${thumb}')"></div>` : ''}
-        `;
-        grid.appendChild(btn);
-    });
-}
-
-function showUpload() {
-    hideAll();
-    document.getElementById('uploadPage').classList.remove('hidden');
-}
-
-function goHome() {
-    hideAll();
-    state.currentUser = null;
-    state.votes = {1:null, 2:null, 3:null};
-    resetFilters();
-    document.getElementById('landingPage').classList.remove('hidden');
-}
-
-function hideAll() {
-    ['landingPage', 'uploadPage', 'loginModal', 'app', 'archiveHub', 'adminModal', 'leaderboardPage'].forEach(id => {
-        const el = document.getElementById(id);
-        if(el) el.classList.add('hidden');
-    });
-}
-
-// --- MODES ---
-function enterCurrentMonth() {
-    hideAll();
-    document.getElementById('app').classList.remove('hidden');
-    document.getElementById('contestTitle').textContent = state.data.activeContest.monthName;
-    document.getElementById('submitBtn').classList.add('hidden');
-    document.getElementById('filterBar').classList.add('hidden');
-    
-    // Only shuffle if it's empty (first load of the session) to keep it stable
-    if(state.activeViewList.length === 0) {
-        const rawEntries = [...state.data.activeContest.entries];
-        state.activeViewList = shuffleArray(rawEntries);
-    }
-
-    if (state.currentPhase === 'voting') {
-        document.getElementById('contestSubtitle').textContent = "Cast your votes (Names Hidden)";
-        document.getElementById('submitBtn').classList.remove('hidden');
-        renderGallery(state.activeViewList, false, true); 
-    } else if (state.currentPhase === 'voted') {
-        document.getElementById('contestSubtitle').textContent = "Votes Submitted. Gallery Locked.";
-        renderGallery(state.activeViewList, false, false); 
-    } else {
-        document.getElementById('contestSubtitle').textContent = "Preview Mode (Voting Closed)";
-        renderGallery(state.activeViewList, false, false); 
-    }
-    checkAdminAccess();
-}
-
-function loadArchiveMonth(index) {
-    state.activeArchiveMonth = state.data.archive[index];
-    state.activeViewList = [...state.activeArchiveMonth.entries];
-    
-    const winners = state.activeArchiveMonth.winners;
-    if(winners) {
-        state.activeViewList.sort((a, b) => {
-            const getScore = (id) => id === winners.gold ? 3 : id === winners.silver ? 2 : id === winners.bronze ? 1 : 0;
-            return getScore(b.id) - getScore(a.id);
-        });
-    }
-
-    hideAll();
-    document.getElementById('app').classList.remove('hidden');
-    document.getElementById('contestTitle').textContent = state.activeArchiveMonth.monthName;
-    
-    const stats = state.activeArchiveMonth.stats;
-    let subtitle = "Official Results";
-    if(stats) {
-        const totalPossible = stats.totalVotersSnapshot || state.data.teamMembers.length;
-        const percent = Math.round((stats.votesCast / totalPossible) * 100);
-        subtitle += ` • ${stats.votesCast}/${totalPossible} Votes (${percent}%)`;
-    }
-    document.getElementById('contestSubtitle').textContent = subtitle;
-
-    document.getElementById('submitBtn').classList.add('hidden');
-    document.getElementById('filterBar').classList.add('hidden');
-    document.getElementById('adminControls')?.classList.add('hidden'); 
-    
-    renderGallery(state.activeViewList, true, false, state.activeArchiveMonth.winners); 
-}
-
-function loadAllArchives() {
-    hideAll();
-    document.getElementById('app').classList.remove('hidden');
-    document.getElementById('contestTitle').textContent = "Full Archive";
-    document.getElementById('contestSubtitle').textContent = "All Entries • All Time";
-    document.getElementById('submitBtn').classList.add('hidden');
-    document.getElementById('filterBar').classList.remove('hidden');
-    renderAllGallery();
-}
-
-// --- ADMIN ---
-function checkAdminAccess() {
-    const adminBtn = document.getElementById('adminControls');
-    if (state.currentUser === "Anthony Wilson") {
-        adminBtn.classList.remove('hidden');
-    } else {
-        adminBtn.classList.add('hidden');
-    }
-}
-
-function openAdminModal() {
-    document.getElementById('adminModal').classList.remove('hidden');
-}
-
-function generateCloseJSON() {
-    const goldId = parseInt(document.getElementById('adminGold').value);
-    const silverId = parseInt(document.getElementById('adminSilver').value);
-    const bronzeId = parseInt(document.getElementById('adminBronze').value);
-    const votesCount = parseInt(document.getElementById('adminVotes').value);
-    
-    if(!goldId || !silverId || !bronzeId) return alert("Please enter all IDs");
-
-    const newArchive = {
-        monthName: state.data.activeContest.monthName,
-        winners: { gold: goldId, silver: silverId, bronze: bronzeId },
-        stats: {
-            votesCast: votesCount,
-            totalVotersSnapshot: state.data.teamMembers.length
-        },
-        entries: state.data.activeContest.entries
-    };
-
-    const jsonString = JSON.stringify(newArchive, null, 2);
-    const output = document.getElementById('adminOutput');
-    output.value = `${jsonString},`; 
-    output.classList.remove('hidden');
-}
-
-// --- LOGIN & CORE ---
-function initDropdown() {
-    const select = document.getElementById('userSelect');
-    select.innerHTML = '<option value="" disabled selected>Select Name...</option>';
-    state.data.teamMembers.forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = m;
-        opt.textContent = m;
-        select.appendChild(opt);
-    });
-}
-
-function login() {
-    const val = document.getElementById('userSelect').value;
-    if (!val) return;
-    state.currentUser = val;
-    hideAll();
-    enterCurrentMonth();
-}
-
-// --- RENDERING ---
-function toggleFilter(rank) {
-    state.filters[rank] = !state.filters[rank];
-    const colors = { 1: 'yellow-500', 2: 'gray-300', 3: 'orange-500' };
-    const btn = document.getElementById(rank === 1 ? 'filterGold' : rank === 2 ? 'filterSilver' : 'filterBronze');
-    
-    if (state.filters[rank]) {
-        btn.classList.remove('opacity-50');
-        btn.classList.add('bg-gray-700', 'border-' + colors[rank], 'text-' + colors[rank]);
-    } else {
-        btn.classList.add('opacity-50');
-        btn.classList.remove('bg-gray-700', 'border-' + colors[rank], 'text-' + colors[rank]);
-    }
-    renderAllGallery();
-}
-
-function resetFilters() {
-    state.filters = { 1: false, 2: false, 3: false };
-    ['filterGold', 'filterSilver', 'filterBronze'].forEach(id => {
-        document.getElementById(id).classList.add('opacity-50');
-        document.getElementById(id).classList.remove('bg-gray-700');
-    });
-    if (document.getElementById('contestTitle').textContent === "Full Archive") {
-        renderAllGallery();
-    }
-}
-
-function renderAllGallery() {
-    let allEntries = [];
-    state.data.archive.forEach(month => {
-        month.entries.forEach(entry => {
-            let rank = 0;
-            if (entry.id === month.winners.gold) rank = 1;
-            if (entry.id === month.winners.silver) rank = 2;
-            if (entry.id === month.winners.bronze) rank = 3;
-            allEntries.push({ ...entry, monthName: month.monthName, rank: rank });
-        });
-    });
-
-    const isFiltering = state.filters[1] || state.filters[2] || state.filters[3];
-    if (isFiltering) {
-        allEntries = allEntries.filter(e => state.filters[e.rank] === true);
-    }
-    renderGallery(allEntries, true, false, null, true);
-}
-
-function renderGallery(entries, isResults, allowVoting, specificWinners = null, isMixed = false) {
+function renderGallery() {
     const grid = document.getElementById('galleryGrid');
     grid.innerHTML = '';
+    
+    if(!state.activeContest || state.entries.length === 0) {
+        grid.innerHTML = `<div class="col-span-3 text-center text-gray-500 py-10">Waiting for photos...</div>`;
+        return;
+    }
 
-    entries.forEach(entry => {
+    const isVoting = state.activeContest.status === 'voting';
+    const isLocked = state.hasVotedLocally;
+    
+    // STRICT Voting Mode Check
+    const blindMode = isVoting && !isLocked;
+    const list = blindMode ? state.shuffledEntries : state.entries;
+
+    document.getElementById('galleryTitle').textContent = isLocked ? "Gallery (Results Pending)" : "Cast Your Votes";
+    document.getElementById('voteCounter').textContent = isLocked ? "Completed" : `Votes: ${Object.values(state.votes).filter(x=>x).length}/3`;
+
+    list.forEach(entry => {
         const isMine = entry.photographer === state.currentUser;
         
-        // --- RANK CALCULATION ---
+        // Find Rank
         let rank = 0;
-        let userSelectionRank = 0;
+        if(state.votes[1] === entry.id) rank = 1;
+        if(state.votes[2] === entry.id) rank = 2;
+        if(state.votes[3] === entry.id) rank = 3;
 
-        // 1. Result/Archive Mode Rank
-        if (isMixed) {
-            rank = entry.rank;
-        } else if (specificWinners) {
-            if (entry.id === specificWinners.gold) rank = 1;
-            else if (entry.id === specificWinners.silver) rank = 2;
-            else if (entry.id === specificWinners.bronze) rank = 3;
-        }
+        // Styles
+        let borderClass = 'border-gray-700';
+        let opacityClass = 'opacity-100';
+        
+        if (rank === 1) borderClass = 'border-yellow-400 ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.4)]';
+        if (rank === 2) borderClass = 'border-gray-300 ring-2 ring-gray-300';
+        if (rank === 3) borderClass = 'border-orange-500 ring-2 ring-orange-500';
+        
+        // If we have 3 votes and this isn't one of them, fade it out slightly
+        const votesCast = Object.values(state.votes).filter(x=>x).length;
+        if (votesCast === 3 && rank === 0 && !isLocked) opacityClass = 'opacity-40 grayscale';
 
-        // 2. Voting Mode Rank (User's personal selection)
-        if (allowVoting) {
-            if (state.votes[1] === entry.id) userSelectionRank = 1;
-            if (state.votes[2] === entry.id) userSelectionRank = 2;
-            if (state.votes[3] === entry.id) userSelectionRank = 3;
-        }
-
-        // --- BORDER LOGIC ---
-        // Prioritize: Result Rank > User Selection Rank > Default Gray
-        let border = 'border-gray-700';
-        let glow = '';
-
-        if (isResults && rank > 0) {
-            if (rank === 1) { border = 'border-yellow-500 ring-2 ring-yellow-500'; glow = 'shadow-[0_0_20px_rgba(234,179,8,0.5)]'; }
-            else if (rank === 2) { border = 'border-gray-300 ring-2 ring-gray-300'; }
-            else if (rank === 3) { border = 'border-orange-600 ring-2 ring-orange-600'; }
-        } 
-        else if (allowVoting && userSelectionRank > 0) {
-            if (userSelectionRank === 1) { border = 'border-yellow-500 ring-4 ring-yellow-500'; glow = 'shadow-[0_0_20px_rgba(234,179,8,0.5)] transform scale-[1.02]'; }
-            else if (userSelectionRank === 2) { border = 'border-gray-400 ring-4 ring-gray-400'; glow = 'shadow-[0_0_20px_rgba(156,163,175,0.5)] transform scale-[1.02]'; }
-            else if (userSelectionRank === 3) { border = 'border-orange-500 ring-4 ring-orange-500'; glow = 'shadow-[0_0_20px_rgba(249,115,22,0.5)] transform scale-[1.02]'; }
-        }
-
-        // --- CARD HTML ---
-        const card = document.createElement('div');
-        card.className = `bg-gray-800 rounded-xl overflow-hidden shadow-lg border transition-all duration-300 ${border} ${glow} flex flex-col`;
-        const idDisplay = `#${entry.id}`;
-
-        // Overlay for Results
-        let overlay = '';
-        if (isResults && rank > 0) {
-            const label = rank===1 ? '🏆 1st Place' : rank===2 ? '🥈 2nd Place' : '🥉 3rd Place';
-            const color = rank===1 ? 'bg-yellow-500 text-black' : rank===2 ? 'bg-gray-300 text-black' : 'bg-orange-600 text-white';
-            overlay = `<div class="absolute top-0 w-full ${color} font-bold text-center py-1 z-10">${label}</div>`;
-        }
-
-        card.innerHTML = `
-            <div class="relative group h-64 overflow-hidden cursor-zoom-in" onclick="viewImage('${entry.filename}')">
-                ${overlay}
-                <img src="${entry.filename}" class="w-full h-full object-cover transition duration-500 group-hover:scale-110">
-                ${allowVoting && isMine ? '<div class="absolute top-2 right-2 bg-red-600 px-2 rounded text-xs z-10">Yours</div>' : ''}
-                ${!isResults ? `<div class="absolute bottom-2 right-2 bg-black/60 px-2 py-1 rounded text-xs backdrop-blur-md z-10 font-mono">${idDisplay}</div>` : ''}
+        const el = document.createElement('div');
+        el.className = `bg-gray-800 rounded-xl overflow-hidden border transition-all duration-300 transform ${borderClass} ${opacityClass}`;
+        
+        // Interaction Logic:
+        // If Blind Mode + Not Mine = No Click (or limited). 
+        // Actually, user requested "Lightbox must ... not crop". 
+        // We allow clicking to view full image even in voting, just don't show name in lightbox if blind.
+        // For now, simple viewImage.
+        
+        el.innerHTML = `
+            <div class="relative bg-gray-900 group cursor-pointer" onclick="viewImage('${entry.url}')">
+                <img src="${entry.url}" loading="lazy" class="w-full h-auto object-contain">
+                ${isMine ? '<span class="absolute top-2 right-2 bg-[#94c120] text-black text-[10px] font-bold px-2 py-1 rounded">YOU</span>' : ''}
             </div>
             
-            <div class="p-4 flex-grow flex flex-col justify-between">
-                <div>
-                    ${!allowVoting ? `<h3 class="font-bold text-white text-lg">${entry.photographer}</h3>` : ''}
-                    ${isMixed ? `<p class="text-xs text-gray-400 mt-1">${entry.monthName}</p>` : ''}
+            ${ (!blindMode || isMine) ? `<div class="p-2 text-center text-xs font-bold text-gray-400 border-t border-gray-700">${entry.photographer}</div>` : '' }
+
+            ${ (blindMode && !isMine) ? `
+                <div class="p-2 flex gap-1 justify-center bg-gray-800">
+                    <button onclick="castVote(1, '${entry.id}')" class="flex-1 py-2 rounded text-xs font-bold transition ${rank===1 ? 'bg-[#94c120] text-black' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}">1st</button>
+                    <button onclick="castVote(2, '${entry.id}')" class="flex-1 py-2 rounded text-xs font-bold transition ${rank===2 ? 'bg-gray-200 text-black' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}">2nd</button>
+                    <button onclick="castVote(3, '${entry.id}')" class="flex-1 py-2 rounded text-xs font-bold transition ${rank===3 ? 'bg-orange-500 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}">3rd</button>
+                </div>
+            ` : '' }
+        `;
+        grid.appendChild(el);
+    });
+
+    // Toggle Submit Button
+    const votes = Object.values(state.votes).filter(x=>x).length;
+    const btn = document.getElementById('submitBtn');
+    if(votes === 3 && !isLocked) btn.classList.remove('hidden');
+    else btn.classList.add('hidden');
+}
+
+function castVote(rank, id) {
+    if(state.votes[rank] === id) {
+        state.votes[rank] = null; // Toggle off
+    } else {
+        // Remove ID from other slots if present
+        if(state.votes[1]===id) state.votes[1]=null;
+        if(state.votes[2]===id) state.votes[2]=null;
+        if(state.votes[3]===id) state.votes[3]=null;
+        
+        state.votes[rank] = id; // Set new
+    }
+    renderGallery();
+}
+
+async function submitVotes() {
+    if(!confirm("Submit these 3 votes? This cannot be undone.")) return;
+    
+    await db.collection("contests").doc(state.activeContest.id).collection("votes").doc(state.currentUser).set({
+        voter: state.currentUser,
+        votes: state.votes,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    localStorage.setItem(`voted_${state.activeContest.id}`, 'true');
+    state.hasVotedLocally = true;
+    
+    navTo('landing');
+    alert("Votes Submitted Successfully! 🚀");
+}
+
+// --- 7. LEADERBOARD & ARCHIVES ---
+function renderLeaderboard() {
+    // 1. Calculate Historical Points
+    const calculateScores = (archivesSubset) => {
+        let sc = {};
+        TEAM_MEMBERS.forEach(m => sc[m] = { name: m, points: 0, gold: 0, silver: 0, bronze: 0, entries: 0 });
+        
+        archivesSubset.forEach(contest => {
+            const findName = (id) => {
+                const e = contest.entries.find(x => x.id === id);
+                return e ? e.photographer : null;
+            };
+            const g = findName(contest.winners.gold);
+            const s = findName(contest.winners.silver);
+            const b = findName(contest.winners.bronze);
+            
+            if(g && sc[g]) { sc[g].points += 3; sc[g].gold++; }
+            if(s && sc[s]) { sc[s].points += 2; sc[s].silver++; }
+            if(b && sc[b]) { sc[b].points += 1; sc[b].bronze++; }
+        });
+        return sc;
+    };
+
+    const currentScores = calculateScores(state.archives);
+    const prevScores = calculateScores(state.archives.slice(1));
+
+    // Entry Counts (Iterate all archives)
+    state.archives.forEach(a => {
+        a.entries.forEach(e => {
+            if(currentScores[e.photographer]) {
+                currentScores[e.photographer].entries++;
+            }
+        });
+    });
+
+    const getRank = (scoreObj, playerName) => {
+        const sorted = Object.values(scoreObj).sort((a,b) => b.points - a.points);
+        const idx = sorted.findIndex(p => p.name === playerName);
+        return idx === -1 ? null : idx + 1;
+    };
+
+    const sortedCurrent = Object.values(currentScores).sort((a,b) => {
+        if (b.points !== a.points) return b.points - a.points;
+        return a.name.localeCompare(b.name);
+    });
+
+    const grid = document.getElementById('leaderboardGrid');
+    
+    // Updated 12-Column Header
+    grid.innerHTML = `
+        <div class="grid grid-cols-12 gap-2 p-4 text-xs uppercase font-bold text-gray-500 tracking-widest border-b border-gray-800">
+            <div class="col-span-2 flex items-center pl-2">Rank</div>
+            <div class="col-span-3 flex items-center">Photographer</div>
+            <div class="col-span-2 flex items-center justify-center">Entries</div>
+            <div class="col-span-3 flex items-center justify-center">Wins (G/S/B)</div>
+            <div class="col-span-2 flex items-center justify-end pr-2">Total Pts</div>
+        </div>
+    `;
+
+    sortedCurrent.forEach((p, idx) => {
+        const currentRank = idx + 1;
+        const prevRank = getRank(prevScores, p.name);
+        
+        let trend = '<span class="text-gray-700 text-xs ml-1">➖</span>'; 
+        if (prevRank) {
+            if (currentRank < prevRank) trend = '<span class="text-green-500 text-xs ml-1">▲</span>'; 
+            else if (currentRank > prevRank) trend = '<span class="text-red-500 text-xs ml-1">▼</span>'; 
+        }
+
+        let rankDisplay = `<span class="text-gray-500 font-mono font-bold text-lg">#${currentRank}</span>`;
+        if(currentRank===1) rankDisplay = '<span class="text-2xl filter drop-shadow-lg">🥇</span>';
+        if(currentRank===2) rankDisplay = '<span class="text-2xl filter drop-shadow-lg">🥈</span>';
+        if(currentRank===3) rankDisplay = '<span class="text-2xl filter drop-shadow-lg">🥉</span>';
+
+        const winsStr = `${p.gold} <span class="text-gray-700">/</span> ${p.silver} <span class="text-gray-700">/</span> ${p.bronze}`;
+
+        grid.innerHTML += `
+            <div class="grid grid-cols-12 gap-2 items-center py-3 border-b border-gray-800/50 hover:bg-white/5 transition group">
+                <!-- Rank (2 cols) -->
+                <div class="col-span-2 flex items-center pl-2">
+                    <div class="w-8 flex justify-center mr-1">${rankDisplay}</div>
+                    <div>${trend}</div>
                 </div>
                 
-                ${allowVoting && !isMine ? `
-                    <div class="mt-3">
-                        ${renderVoteButtons(entry.id, userSelectionRank)}
-                    </div>
-                ` : ''}
+                <!-- Name (3 cols) -->
+                <div class="col-span-3 font-bold text-white text-sm truncate tracking-tight">
+                    ${p.name}
+                </div>
+
+                <!-- Entries (2 cols) -->
+                <div class="col-span-2 text-center text-gray-400 font-mono text-sm">
+                    ${p.entries}
+                </div>
+
+                <!-- Wins (3 cols) -->
+                <div class="col-span-3 font-mono text-sm text-gray-500 text-center">
+                    ${winsStr}
+                </div>
+
+                <!-- Points (2 cols) -->
+                <div class="col-span-2 font-bold text-[#94c120] text-xl text-right pr-2">
+                    ${p.points}
+                </div>
+            </div>
+        `;
+    });
+}
+
+function renderArchives() {
+    const grid = document.getElementById('archiveGrid');
+    grid.innerHTML = '';
+    document.getElementById('megaArchive').classList.add('hidden');
+    document.getElementById('archiveDetailView').classList.add('hidden'); // Ensure detail is hidden
+    
+    state.archives.forEach(a => {
+        const winEntry = a.entries.find(e => e.id === a.winners.gold);
+        const thumb = winEntry ? winEntry.url : '';
+        
+        const card = document.createElement('div');
+        card.className = "glass p-4 rounded-xl flex items-center gap-4 cursor-pointer hover:bg-gray-800 transition relative group";
+        
+        // Delete Button for Admins
+        const deleteBtn = state.isAdmin ? 
+            `<button onclick="event.stopPropagation(); deleteArchive('${a.id}')" class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full text-xs hover:bg-red-600 hidden group-hover:block">×</button>` 
+            : '';
+
+        card.onclick = () => openArchiveDetail(a.id); // Pass ID
+        card.innerHTML = `
+            ${deleteBtn}
+            <div class="h-16 w-16 bg-gray-800 rounded-lg bg-cover bg-center" style="background-image: url('${thumb}')"></div>
+            <div>
+                <h3 class="font-bold text-white">${a.monthName}</h3>
+                <p class="text-xs text-gray-400">${a.entries.length} Entries</p>
             </div>
         `;
         grid.appendChild(card);
     });
-    
-    if(allowVoting) updateSubmitButton();
 }
 
-function renderVoteButtons(id, currentSelection) {
-    // If NOT selected, show 3 small buttons
-    if (currentSelection === 0) {
-        return `
-            <div class="flex gap-1 transition-all duration-300">
-                <button onclick="vote(1, ${id})" class="flex-1 py-2 text-xs rounded font-bold bg-gray-700 text-gray-400 hover:bg-yellow-900 hover:text-yellow-500 hover:border-yellow-500 border border-transparent transition">🥇 3pts</button>
-                <button onclick="vote(2, ${id})" class="flex-1 py-2 text-xs rounded font-bold bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-gray-300 hover:border-gray-400 border border-transparent transition">🥈 2pts</button>
-                <button onclick="vote(3, ${id})" class="flex-1 py-2 text-xs rounded font-bold bg-gray-700 text-gray-400 hover:bg-orange-900 hover:text-orange-500 hover:border-orange-500 border border-transparent transition">🥉 1pt</button>
+function openArchiveDetail(archiveId) {
+    const archive = state.archives.find(a => a.id === archiveId);
+    if(!archive) return;
+
+    document.getElementById('archiveGrid').classList.add('hidden');
+    const detail = document.getElementById('archiveDetailView');
+    detail.classList.remove('hidden');
+    
+    // Find winners
+    const g = archive.entries.find(e=>e.id===archive.winners.gold);
+    const s = archive.entries.find(e=>e.id===archive.winners.silver);
+    const b = archive.entries.find(e=>e.id===archive.winners.bronze);
+    
+    // Filter out winners for the "Rest" grid
+    const winnerIds = [archive.winners.gold, archive.winners.silver, archive.winners.bronze];
+    const rest = archive.entries.filter(e => !winnerIds.includes(e.id));
+
+    detail.innerHTML = `
+        <div class="mb-8 fade-in">
+            <button onclick="closeArchiveDetail()" class="mb-6 px-4 py-2 bg-gray-800 rounded-lg text-sm text-gray-400 hover:text-white flex items-center gap-2 transition">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                Back to History
+            </button>
+            
+            <h2 class="text-3xl font-bold text-white mb-8 text-center tracking-tight">${archive.monthName} <span class="text-[#94c120]">Winners</span></h2>
+            
+            <!-- PODIUM -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+                <!-- Gold (First on mobile order for impact, center on desktop) -->
+                <div class="order-1 md:order-2">
+                    ${g ? `
+                    <div class="bg-gray-800/50 rounded-2xl overflow-hidden border-2 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.2)]">
+                        <img src="${g.url}" class="w-full h-64 md:h-80 object-cover" onclick="viewImage('${g.url}')">
+                        <div class="p-4 text-center bg-[#151b2b]">
+                            <div class="text-3xl mb-1">🥇</div>
+                            <div class="font-bold text-white text-xl">${g.photographer}</div>
+                            <div class="text-[#94c120] font-mono text-sm">${g.points || '?'} pts</div>
+                        </div>
+                    </div>` : ''}
+                </div>
+
+                <!-- Silver -->
+                <div class="order-2 md:order-1 mt-4 md:mt-12">
+                    ${s ? `
+                    <div class="bg-gray-800/50 rounded-2xl overflow-hidden border border-gray-400">
+                        <img src="${s.url}" class="w-full h-56 md:h-64 object-cover" onclick="viewImage('${s.url}')">
+                        <div class="p-4 text-center bg-[#151b2b]">
+                            <div class="text-2xl mb-1">🥈</div>
+                            <div class="font-bold text-gray-200 text-lg">${s.photographer}</div>
+                            <div class="text-gray-500 font-mono text-sm">${s.points || '?'} pts</div>
+                        </div>
+                    </div>` : ''}
+                </div>
+
+                <!-- Bronze -->
+                <div class="order-3 md:order-3 mt-4 md:mt-12">
+                    ${b ? `
+                    <div class="bg-gray-800/50 rounded-2xl overflow-hidden border border-orange-500">
+                        <img src="${b.url}" class="w-full h-56 md:h-64 object-cover" onclick="viewImage('${b.url}')">
+                        <div class="p-4 text-center bg-[#151b2b]">
+                            <div class="text-2xl mb-1">🥉</div>
+                            <div class="font-bold text-gray-200 text-lg">${b.photographer}</div>
+                            <div class="text-gray-500 font-mono text-sm">${b.points || '?'} pts</div>
+                        </div>
+                    </div>` : ''}
+                </div>
             </div>
-        `;
+
+            <!-- THE REST -->
+            <div class="flex items-center gap-4 mb-6">
+                <div class="h-px bg-gray-800 flex-grow"></div>
+                <h3 class="text-gray-500 text-sm font-bold uppercase tracking-widest">Other Entries</h3>
+                <div class="h-px bg-gray-800 flex-grow"></div>
+            </div>
+
+            <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                ${rest.map(e => `
+                    <div class="aspect-square bg-gray-800 overflow-hidden cursor-pointer relative group rounded-lg" onclick="viewImage('${e.url}')">
+                        <img src="${e.url}" loading="lazy" class="w-full h-full object-cover transition duration-500 group-hover:scale-110">
+                        <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center flex-col p-2 text-center">
+                            <span class="text-white font-bold text-xs">${e.photographer}</span>
+                            ${e.points ? `<span class="text-[#94c120] text-xs font-mono mt-1">${e.points} pts</span>` : ''}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+    
+    mega.innerHTML = podiumHTML;
+}
+
+function closeArchiveDetail() {
+    document.getElementById('archiveDetailView').classList.add('hidden');
+    document.getElementById('archiveGrid').classList.remove('hidden');
+}
+
+function loadMegaArchive() {
+    document.getElementById('archiveGrid').classList.add('hidden');
+    document.getElementById('megaArchive').classList.remove('hidden');
+    filterMega('all');
+}
+
+function closeMegaArchive() {
+    document.getElementById('megaArchive').classList.add('hidden');
+    document.getElementById('archiveGrid').classList.remove('hidden');
+}
+
+function filterMega(type) {
+    // Highlight active button
+    ['all','winners','mine'].forEach(t => {
+        const btn = document.getElementById(`filter-${t}`);
+        if(t === type) {
+            btn.className = "px-4 py-2 bg-[#94c120] text-black rounded-lg text-sm font-bold shadow-[0_0_10px_rgba(148,193,32,0.5)] whitespace-nowrap";
+        } else {
+            btn.className = "px-4 py-2 bg-gray-800 text-gray-400 rounded-lg text-sm font-bold whitespace-nowrap hover:text-white";
+        }
+    });
+
+    const grid = document.getElementById('megaGrid');
+    grid.innerHTML = '';
+
+    let items = [];
+
+    if (type === 'all') {
+        state.archives.forEach(a => items.push(...a.entries));
+        items.sort(() => Math.random() - 0.5);
     } 
-    // If SELECTED, show 1 big expanded button
-    else {
-        const colorClass = currentSelection === 1 ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20' 
-                         : currentSelection === 2 ? 'bg-gray-300 text-black shadow-lg shadow-gray-300/20' 
-                         : 'bg-orange-500 text-white shadow-lg shadow-orange-500/20';
-        
-        const label = currentSelection === 1 ? '🥇 1st Place Selected' : currentSelection === 2 ? '🥈 2nd Place Selected' : '🥉 3rd Place Selected';
+    else if (type === 'winners') {
+        state.archives.forEach(a => {
+            const w = a.winners;
+            const gold = a.entries.find(e=>e.id===w.gold);
+            const silver = a.entries.find(e=>e.id===w.silver);
+            const bronze = a.entries.find(e=>e.id===w.bronze);
+            if(gold) items.push({...gold, rank: 1, month: a.monthName});
+            if(silver) items.push({...silver, rank: 2, month: a.monthName});
+            if(bronze) items.push({...bronze, rank: 3, month: a.monthName});
+        });
+        // Sort by newest archive first (implicit in archives order)
+    } 
+    else if (type === 'mine') {
+        state.archives.forEach(a => {
+            items.push(...a.entries.filter(e => e.photographer === state.currentUser));
+        });
+    }
 
-        return `
-            <div class="transition-all duration-300">
-                <button onclick="vote(${currentSelection}, ${id})" class="w-full py-3 text-sm font-bold rounded ${colorClass} hover:opacity-90 transition transform scale-105">
-                    ${label} (Tap to Undo)
-                </button>
+    if(items.length === 0) {
+        grid.innerHTML = `<div class="col-span-full text-center text-gray-500 py-8">No images found for this filter.</div>`;
+        return;
+    }
+
+    items.forEach(img => {
+        // For winners, maybe add a border?
+        let border = '';
+        if(type==='winners') {
+            if(img.rank===1) border = 'border-2 border-yellow-400';
+            if(img.rank===2) border = 'border-2 border-gray-300';
+            if(img.rank===3) border = 'border-2 border-orange-500';
+        }
+
+        grid.innerHTML += `
+            <div class="bg-gray-800 overflow-hidden cursor-pointer ${border}" onclick="viewImage('${img.url}')">
+                <img src="${img.url}" loading="lazy" class="w-full h-auto object-cover hover:opacity-90 transition">
             </div>
         `;
-    }
+    });
 }
 
-function vote(rank, id) {
-    if (state.votes[rank] === id) state.votes[rank] = null;
-    else {
-        [1,2,3].forEach(r => { if(state.votes[r] === id) state.votes[r] = null; });
-        state.votes[rank] = id;
-    }
-    // Re-render using the STABLE view list (no jumping)
-    renderGallery(state.activeViewList, false, true);
-}
+// --- 8. ADMIN ---
+function showAdminPanel() { document.getElementById('view-admin').classList.remove('hidden'); }
 
-function updateSubmitButton() {
-    const count = [1,2,3].filter(r => state.votes[r]).length;
-    document.getElementById('voteCountBadge').textContent = `${count}/3`;
-    const btn = document.getElementById('submitBtn');
-    if(count === 3) {
-        btn.classList.remove('hidden');
-        btn.disabled = false;
-    } else {
-        btn.classList.add('hidden');
-        btn.disabled = true;
-    }
-}
-
-function submitVotes() {
-    const getDetails = (r) => {
-        const e = state.data.activeContest.entries.find(x => x.id === state.votes[r]);
-        const pts = r === 1 ? '3pts' : r === 2 ? '2pts' : '1pt';
-        return `Rank ${r} (${pts}): ID #${e.id} by ${e.photographer}`;
-    };
-    const body = `Voter: ${state.currentUser}\n\n${getDetails(1)}\n${getDetails(2)}\n${getDetails(3)}`;
-    window.open(`mailto:${state.data.config.adminEmail}?subject=Votes&body=${encodeURIComponent(body)}`);
+async function adminCreateContest() {
+    const n = document.getElementById('newContestName').value;
+    const i = document.getElementById('newContestId').value;
+    if(!n || !i) return;
     
-    const key = `voted_${state.data.activeContest.monthName}`;
-    localStorage.setItem(key, 'true');
+    // Use 'voting' directly as requested
+    await db.collection("contests").doc(i).set({ monthName: n, status: "voting" });
+    alert("Created & Voting Opened!"); 
+    document.getElementById('view-admin').classList.add('hidden');
+    navTo('landing');
+}
+
+async function deleteArchive(id) {
+    if(!confirm(`Delete history for ${id}? This cannot be undone.`)) return;
     
-    alert("Vote submitted! The gallery will now lock for you.");
-    location.reload();
+    try {
+        await db.collection("contests").doc(id).delete();
+        await db.collection("archives").doc(id).delete();
+        
+        // CLEANUP: LocalStorage & State
+        localStorage.removeItem('voted_' + id);
+        
+        if (state.activeContest && state.activeContest.id === id) {
+            state.activeContest = null;
+            state.entries = [];
+            state.votes = {1: null, 2: null, 3: null};
+            state.hasVotedLocally = false;
+            
+            if(entriesUnsubscribe) entriesUnsubscribe();
+            
+            renderGallery();
+            updateHomeUI(null);
+        }
+
+        alert("Deleted.");
+    } catch(e) {
+        console.error(e);
+        alert("Error deleting.");
+    }
+}
+
+async function adminFinalizeArchive() {
+    if(!state.activeContest || !confirm("Are you sure? This will calculate votes and end the contest.")) return;
+
+    const votesSnap = await db.collection("contests").doc(state.activeContest.id).collection("votes").get();
+    const votes = votesSnap.docs.map(d => d.data().votes);
+
+    // Tally Points
+    let tally = {};
+    state.entries.forEach(e => {
+        tally[e.id] = { points: 0, goldCount: 0, id: e.id, ...e }; // Spread existing entry data
+    });
+
+    votes.forEach(v => {
+        if(v['1'] && tally[v['1']]) { tally[v['1']].points += 3; tally[v['1']].goldCount++; }
+        if(v['2'] && tally[v['2']]) { tally[v['2']].points += 2; }
+        if(v['3'] && tally[v['3']].points !== undefined) { tally[v['3']].points += 1; }
+    });
+
+    const results = Object.values(tally).sort((a,b) => {
+        if (b.points !== a.points) return b.points - a.points; 
+        return b.goldCount - a.goldCount; 
+    });
+
+    const gold = results[0] ? results[0].id : null;
+    const silver = results[1] ? results[1].id : null;
+    const bronze = results[2] ? results[2].id : null;
+
+    if(!gold) return alert("No votes cast yet!");
+
+    // Save with calculated points attached to entries!
+    await db.collection("archives").doc(state.activeContest.id).set({
+        id: state.activeContest.id,
+        monthName: state.activeContest.monthName,
+        winners: {gold, silver, bronze},
+        entries: results // Save the sorted results which include points
+    });
+
+    await db.collection("contests").doc(state.activeContest.id).update({status:'closed'});
+
+    alert("Contest Closed! Winners Calculated. 🏆");
+    document.getElementById('view-admin').classList.add('hidden');
+    
+    location.reload(); 
+}
+
+function viewImage(url) {
+    document.getElementById('lightboxImg').src = url;
+    document.getElementById('lightbox').classList.remove('hidden');
 }
