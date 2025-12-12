@@ -380,7 +380,7 @@ function renderLeaderboard() {
     grid.innerHTML = `
         <div class="grid grid-cols-12 gap-2 p-4 text-xs uppercase font-bold text-gray-500 tracking-widest border-b border-gray-800">
             <div class="col-span-2 flex items-center pl-2">Rank</div>
-            <div class="col-span-3 flex items-center">Photographer</div>
+            <div class="col-span-3 flex items-center">Name</div>
             <div class="col-span-2 flex items-center justify-center">Entries</div>
             <div class="col-span-3 flex items-center justify-center">Wins (G/S/B)</div>
             <div class="col-span-2 flex items-center justify-end pr-2">Total Pts</div>
