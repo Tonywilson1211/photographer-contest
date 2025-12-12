@@ -542,7 +542,7 @@ function openArchiveDetail(archiveId) {
                 <div class="h-px bg-gray-800 flex-grow"></div>
             </div>
 
-            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
                 ${rest.map(e => `
                     <div class="bg-gray-800 overflow-hidden cursor-pointer relative group rounded-lg" onclick="viewImage('${e.url}')">
                         <img src="${e.url}" loading="lazy" class="w-full h-auto object-contain">
