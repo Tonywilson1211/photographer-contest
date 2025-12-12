@@ -153,7 +153,8 @@ function startDataSync() {
              renderGallery();
         } else {
              state.activeContest = latest;
-             state.hasVotedLocally = !!localStorage.getItem(`voted_${latest.id}`);
+             const userKey = `voted_${latest.id}_${state.currentUser}`;
+             state.hasVotedLocally = !!localStorage.getItem(userKey);
              updateHomeUI(latest);
              if(idChanged) syncEntries(latest.id);
         }
@@ -321,7 +322,8 @@ async function submitVotes() {
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
     });
 
-    localStorage.setItem(`voted_${state.activeContest.id}`, 'true');
+    const userKey = `voted_${state.activeContest.id}_${state.currentUser}`;
+    localStorage.setItem(userKey, 'true');
     state.hasVotedLocally = true;
     
     navTo('landing');
@@ -680,7 +682,7 @@ async function deleteArchive(id) {
         await db.collection("archives").doc(id).delete();
         
         // CLEANUP: LocalStorage & State
-        localStorage.removeItem('voted_' + id);
+        localStorage.removeItem('voted_' + id + '_' + state.currentUser);
         
         if (state.activeContest && state.activeContest.id === id) {
             state.activeContest = null;
