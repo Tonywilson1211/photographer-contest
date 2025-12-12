@@ -382,12 +382,18 @@ function renderLeaderboard() {
     
     // Updated 12-Column Header
     grid.innerHTML = `
-        <div class="grid grid-cols-12 gap-2 p-4 text-xs uppercase font-bold text-gray-500 tracking-widest border-b border-gray-800">
+        <div class="grid grid-cols-12 gap-2 p-2 md:p-4 text-[10px] md:text-xs uppercase font-bold text-gray-500 tracking-widest border-b border-gray-800">
             <div class="col-span-2 flex items-center pl-2">Rank</div>
             <div class="col-span-3 flex items-center">Name</div>
-            <div class="col-span-2 flex items-center justify-center">Entries</div>
-            <div class="col-span-3 flex items-center justify-center">Wins (G/S/B)</div>
-            <div class="col-span-2 flex items-center justify-end pr-2">Total Pts</div>
+            <div class="col-span-2 flex items-center justify-center">
+                <span class="md:hidden">ENT</span><span class="hidden md:inline">Entries</span>
+            </div>
+            <div class="col-span-3 flex items-center justify-center">
+                <span class="md:hidden">WINS</span><span class="hidden md:inline">Wins (G/S/B)</span>
+            </div>
+            <div class="col-span-2 flex items-center justify-end pr-2">
+                <span class="md:hidden">PTS</span><span class="hidden md:inline">Total Pts</span>
+            </div>
         </div>
     `;
 
@@ -413,38 +419,38 @@ function renderLeaderboard() {
             else if (currentRank > prevRank) trend = '<span class="text-red-500 text-xs ml-1">▼</span>'; 
         }
 
-        let rankDisplay = `<span class="text-gray-500 font-mono font-bold text-lg">#${currentRank}</span>`;
-        if(currentRank===1) rankDisplay = '<span class="text-2xl filter drop-shadow-lg">🥇</span>';
-        if(currentRank===2) rankDisplay = '<span class="text-2xl filter drop-shadow-lg">🥈</span>';
-        if(currentRank===3) rankDisplay = '<span class="text-2xl filter drop-shadow-lg">🥉</span>';
+        let rankDisplay = `<span class="text-gray-500 font-mono font-bold text-sm md:text-lg">#${currentRank}</span>`;
+        if(currentRank===1) rankDisplay = '<span class="text-lg md:text-2xl filter drop-shadow-lg">🥇</span>';
+        if(currentRank===2) rankDisplay = '<span class="text-lg md:text-2xl filter drop-shadow-lg">🥈</span>';
+        if(currentRank===3) rankDisplay = '<span class="text-lg md:text-2xl filter drop-shadow-lg">🥉</span>';
 
         const winsStr = `${p.gold} <span class="text-gray-700">/</span> ${p.silver} <span class="text-gray-700">/</span> ${p.bronze}`;
 
         grid.innerHTML += `
-            <div class="grid grid-cols-12 gap-2 items-center py-3 border-b border-gray-800/50 hover:bg-white/5 transition group">
+            <div class="grid grid-cols-12 gap-2 items-center p-2 md:p-4 border-b border-gray-800/50 hover:bg-white/5 transition group">
                 <!-- Rank (2 cols) -->
-                <div class="col-span-2 flex items-center pl-2">
-                    <div class="w-8 flex justify-center mr-1">${rankDisplay}</div>
+                <div class="col-span-2 flex items-center pl-1 md:pl-2">
+                    <div class="w-6 md:w-8 flex justify-center mr-1">${rankDisplay}</div>
                     <div>${trend}</div>
                 </div>
                 
                 <!-- Name (3 cols) -->
-                <div class="col-span-3 font-bold text-white text-sm truncate tracking-tight">
+                <div class="col-span-3 font-bold text-white text-xs md:text-sm truncate tracking-tight pl-1">
                     ${p.name}
                 </div>
 
                 <!-- Entries (2 cols) -->
-                <div class="col-span-2 text-center text-gray-400 font-mono text-sm">
+                <div class="col-span-2 text-center text-gray-400 font-mono text-xs md:text-sm">
                     ${p.entries}
                 </div>
 
                 <!-- Wins (3 cols) -->
-                <div class="col-span-3 font-mono text-sm text-gray-500 text-center">
+                <div class="col-span-3 font-mono text-[10px] md:text-xs text-gray-500 text-center whitespace-nowrap">
                     ${winsStr}
                 </div>
 
                 <!-- Points (2 cols) -->
-                <div class="col-span-2 font-bold text-[#94c120] text-xl text-right pr-2">
+                <div class="col-span-2 font-bold text-[#94c120] text-sm md:text-xl text-right pr-1 md:pr-2">
                     ${p.points}
                 </div>
             </div>
