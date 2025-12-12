@@ -363,16 +363,20 @@ function renderLeaderboard() {
         });
     });
 
+    const sortLogic = (a, b) => {
+        if (b.points !== a.points) return b.points - a.points;
+        if (b.gold !== a.gold) return b.gold - a.gold;
+        if (b.silver !== a.silver) return b.silver - a.silver;
+        return b.bronze - a.bronze;
+    };
+
     const getRank = (scoreObj, playerName) => {
-        const sorted = Object.values(scoreObj).sort((a,b) => b.points - a.points);
+        const sorted = Object.values(scoreObj).sort(sortLogic);
         const idx = sorted.findIndex(p => p.name === playerName);
         return idx === -1 ? null : idx + 1;
     };
 
-    const sortedCurrent = Object.values(currentScores).sort((a,b) => {
-        if (b.points !== a.points) return b.points - a.points;
-        return a.name.localeCompare(b.name);
-    });
+    const sortedCurrent = Object.values(currentScores).sort(sortLogic);
 
     const grid = document.getElementById('leaderboardGrid');
     
@@ -387,8 +391,20 @@ function renderLeaderboard() {
         </div>
     `;
 
+    let lastRankDisplay = 0;
     sortedCurrent.forEach((p, idx) => {
-        const currentRank = idx + 1;
+        let currentRank = idx + 1;
+        
+        if (idx > 0) {
+            const prev = sortedCurrent[idx - 1];
+            const isTied = prev.points === p.points && 
+                           prev.gold === p.gold && 
+                           prev.silver === p.silver && 
+                           prev.bronze === p.bronze;
+            if (isTied) currentRank = lastRankDisplay;
+        }
+        lastRankDisplay = currentRank;
+
         const prevRank = getRank(prevScores, p.name);
         
         let trend = '<span class="text-gray-700 text-xs ml-1">➖</span>'; 
@@ -688,18 +704,33 @@ async function adminFinalizeArchive() {
     // Tally Points
     let tally = {};
     state.entries.forEach(e => {
-        tally[e.id] = { points: 0, goldCount: 0, id: e.id, ...e }; // Spread existing entry data
+        tally[e.id] = { points: 0, gold: 0, silver: 0, bronze: 0, id: e.id, ...e }; // Spread existing entry data
     });
 
     votes.forEach(v => {
-        if(v['1'] && tally[v['1']]) { tally[v['1']].points += 3; tally[v['1']].goldCount++; }
-        if(v['2'] && tally[v['2']]) { tally[v['2']].points += 2; }
-        if(v['3'] && tally[v['3']].points !== undefined) { tally[v['3']].points += 1; }
+        if(v['1'] && tally[v['1']]) { 
+            tally[v['1']].points += 3; 
+            tally[v['1']].gold += 1; 
+        }
+        if(v['2'] && tally[v['2']]) { 
+            tally[v['2']].points += 2; 
+            tally[v['2']].silver += 1;
+        }
+        if(v['3'] && tally[v['3']]) { 
+            tally[v['3']].points += 1; 
+            tally[v['3']].bronze += 1;
+        }
     });
 
     const results = Object.values(tally).sort((a,b) => {
-        if (b.points !== a.points) return b.points - a.points; 
-        return b.goldCount - a.goldCount; 
+        const scoreDiff = b.points - a.points;
+        if (scoreDiff !== 0) return scoreDiff; // 1. Winner has most points
+
+        const goldDiff = b.gold - a.gold;
+        if (goldDiff !== 0) return goldDiff; // 2. Winner has most Golds
+
+        const silverDiff = b.silver - a.silver;
+        return silverDiff; // 3. Winner has most Silvers
     });
 
     const gold = results[0] ? results[0].id : null;
