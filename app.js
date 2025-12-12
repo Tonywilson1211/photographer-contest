@@ -704,9 +704,16 @@ async function deleteArchive(id) {
 }
 
 async function adminCheckVotes() {
-    if (!state.activeContest) return alert("No active contest.");
+    if (!state.activeContest) return alert("No active contest to check.");
 
     const list = document.getElementById('adminVoteList');
+    
+    // Toggle Logic
+    if (!list.classList.contains('hidden')) {
+        list.classList.add('hidden');
+        return;
+    }
+
     list.classList.remove('hidden');
     list.innerHTML = '<div class="text-xs text-gray-500 text-center">Loading...</div>';
 
@@ -734,6 +741,7 @@ async function adminCheckVotes() {
 
     html += `</div>`;
     list.innerHTML = html;
+    list.classList.remove('hidden'); // Ensure visible after load
 }
 
 async function adminFinalizeArchive() {
