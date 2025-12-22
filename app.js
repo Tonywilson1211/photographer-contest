@@ -37,6 +37,7 @@ const TEAM_MEMBERS = [
     "Kacper Chodyra", 
     "Kyle Plastock", 
     "Lloyd Woodger",
+    "Luke Evans",
     "Paul Udogaranya", 
     "Rainer Knappe", 
     "Raul Caramizaru",
