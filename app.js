@@ -550,13 +550,38 @@ function renderAdminTeamList() {
 async function adminAddTeamMember() {
     const input = document.getElementById('newMemberName');
     const name = input.value.trim();
+    
+    // 1. Basic Validation
     if (!name) return;
-    if (state.teamMembers.includes(name)) return alert("Already exists");
-    state.teamMembers.push(name);
-    await db.collection('config').doc('settings').update({ teamMembers: state.teamMembers });
-    input.value = '';
-    renderAdminTeamList();
-    populateLoginDropdown();
+    if (state.teamMembers.includes(name)) {
+        alert("Name already exists in the list.");
+        input.value = '';
+        return;
+    }
+
+    const originalList = [...state.teamMembers]; // Backup in case of error
+
+    try {
+        // 2. Update Local State (Optimistic UI)
+        state.teamMembers.push(name);
+        state.teamMembers.sort();
+        
+        // 3. Update Database (Use SET with Merge to ensure doc exists)
+        await db.collection('config').doc('settings').set({ 
+            teamMembers: state.teamMembers 
+        }, { merge: true });
+
+        // 4. Success Feedback
+        input.value = '';
+        renderAdminTeamList();
+        populateLoginDropdown();
+        alert(`Success: "${name}" added to the team.`);
+
+    } catch (e) {
+        console.error(e);
+        state.teamMembers = originalList; // Revert on failure
+        alert("Error saving to database: " + e.message);
+    }
 }
 
 async function adminRemoveTeamMember(name) {
