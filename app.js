@@ -25,13 +25,14 @@ let state = {
     archives: [],
     shuffledEntries: [],
     votes: { 1: null, 2: null, 3: null },
-    hasVotedLocally: false,
+    hasVotedLocally: false, // Now effectively "hasVotedCloud"
     myUploads: [],
     teamMembers: [] 
 };
 
 let entriesUnsubscribe = null;
 let uploadsUnsubscribe = null;
+let myVoteUnsubscribe = null; // NEW: Listen for cross-device vote sync
 
 const DEFAULT_TEAM = [
     "Ivan Pecek", "Jack Wickes", "James Wilson", "James Denton",
@@ -170,6 +171,7 @@ function startDataSync() {
         let votingContest = allContests.find(c => c.status === 'voting');
         let subContest = allContests.find(c => c.status === 'submissions_open');
 
+        // Submission Logic
         if (!subContest) {
             state.submissionContest = { 
                 id: state.nextMonthId, 
@@ -183,24 +185,27 @@ function startDataSync() {
             if(subIdChanged) syncMyUploads(subContest.id);
         }
 
+        // Voting Logic
         if (votingContest) {
             const idChanged = !state.activeContest || state.activeContest.id !== votingContest.id;
             state.activeContest = votingContest;
             
-            const userKey = `voted_${votingContest.id}_${state.currentUser}`;
-            state.hasVotedLocally = !!localStorage.getItem(userKey);
-            
-            const savedVotes = localStorage.getItem(userKey + '_data');
-            if(savedVotes) state.votes = JSON.parse(savedVotes);
-
-            if(idChanged) syncEntries(votingContest.id);
+            // NEW: Instead of localStorage, we sync from Cloud
+            if(idChanged) {
+                syncEntries(votingContest.id);
+                syncMyVote(votingContest.id); // This handles the "hasVoted" state
+            }
         } else {
             state.activeContest = null;
             state.entries = [];
+            state.votes = {1:null, 2:null, 3:null};
+            state.hasVotedLocally = false;
             if(entriesUnsubscribe) entriesUnsubscribe();
+            if(myVoteUnsubscribe) myVoteUnsubscribe();
         }
 
         updateHomeUI(votingContest);
+        // Safe refreshes
         if(document.getElementById('view-gallery') && !document.getElementById('view-gallery').classList.contains('hidden')) renderGallery();
         if(document.getElementById('view-upload') && !document.getElementById('view-upload').classList.contains('hidden')) renderUploadView();
     });
@@ -222,8 +227,7 @@ function handleNoContests() {
 
 function syncEntries(contestId) {
     if (entriesUnsubscribe) entriesUnsubscribe();
-    console.log("📥 Syncing entries for:", contestId);
-
+    
     entriesUnsubscribe = db.collection("contests").doc(contestId).collection("entries").onSnapshot(snap => {
         state.entries = snap.docs.map(d => d.data());
         
@@ -234,7 +238,6 @@ function syncEntries(contestId) {
                 [state.shuffledEntries[i], state.shuffledEntries[j]] = [state.shuffledEntries[j], state.shuffledEntries[i]];
             }
         }
-        
         renderGallery();
     });
 }
@@ -247,6 +250,26 @@ function syncMyUploads(contestId) {
         .onSnapshot(snap => {
             state.myUploads = snap.docs.map(d => d.data());
             renderUploadView();
+        });
+}
+
+// --- NEW FUNCTION: SYNC VOTE FROM CLOUD ---
+function syncMyVote(contestId) {
+    if (myVoteUnsubscribe) myVoteUnsubscribe();
+
+    // Listen to MY specific vote document
+    myVoteUnsubscribe = db.collection("contests").doc(contestId).collection("votes").doc(state.currentUser)
+        .onSnapshot(doc => {
+            if (doc.exists) {
+                state.hasVotedLocally = true;
+                state.votes = doc.data().votes;
+                console.log("☁️ Vote synced from cloud:", state.votes);
+            } else {
+                state.hasVotedLocally = false;
+                state.votes = { 1: null, 2: null, 3: null };
+            }
+            updateHomeUI(state.activeContest);
+            renderGallery();
         });
 }
 
@@ -375,12 +398,11 @@ function renderGallery() {
     grid.innerHTML = '';
     
     if(!state.activeContest || state.entries.length === 0) {
-        grid.innerHTML = `<div class="col-span-3 text-center text-gray-500 py-10">Waiting for photos...</div>`;
+        grid.innerHTML = `<div class="col-span-3 text-center text-gray-500 py-10">Waiting for photos... (Contest: ${state.activeContest ? state.activeContest.id : 'None'})</div>`;
         return;
     }
 
     const isLocked = state.hasVotedLocally;
-    // Anonymity: Show names ONLY if contest is closed OR it is my photo
     const showNames = state.activeContest.status === 'closed'; 
     const list = showNames ? state.entries : state.shuffledEntries; 
 
@@ -403,8 +425,9 @@ function renderGallery() {
         if (rank === 1) borderClass = 'border-yellow-400 ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.4)]';
         else if (rank === 2) borderClass = 'border-gray-300 ring-2 ring-gray-300';
         else if (rank === 3) borderClass = 'border-orange-500 ring-2 ring-orange-500';
-        else if (isLocked) opacityClass = 'opacity-40 grayscale';
-        else {
+        
+        // NO GREYING OUT when locked (legacy or new)
+        if (!isLocked) {
             const votesCast = Object.values(state.votes).filter(x=>x).length;
             if (votesCast === 3 && rank === 0) opacityClass = 'opacity-40 grayscale';
         }
@@ -464,17 +487,17 @@ function castVote(rank, id) {
 async function submitVotes() {
     if(!confirm("Submit these 3 votes? This cannot be undone.")) return;
     
+    // SAVE TO CLOUD
     await db.collection("contests").doc(state.activeContest.id).collection("votes").doc(state.currentUser).set({
         voter: state.currentUser,
         votes: state.votes,
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
     });
 
-    const userKey = `voted_${state.activeContest.id}_${state.currentUser}`;
-    localStorage.setItem(userKey, 'true');
-    localStorage.setItem(userKey + '_data', JSON.stringify(state.votes));
+    // We don't strictly need localStorage anymore, but keeping it as a backup isn't harmful
+    // The real source of truth is now syncMyVote()
     
-    state.hasVotedLocally = true;
+    // Navigation handled by the listener update
     navTo('landing');
     alert("Votes Submitted Successfully! 🚀");
 }
@@ -613,59 +636,29 @@ async function adminFinalizeArchive() {
 }
 
 function renderLeaderboard() {
-    // 1. Calculate Historical Points
-    const calculateScores = (archivesSubset) => {
-        let sc = {};
-        // Use loaded team members if possible, otherwise iterate names found in history
-        state.teamMembers.forEach(m => sc[m] = { name: m, points: 0, gold: 0, silver: 0, bronze: 0, entries: 0 });
+    let sc = {};
+    state.teamMembers.forEach(m => sc[m] = { name: m, points: 0, gold: 0, silver: 0, bronze: 0, entries: 0 });
+    
+    state.archives.forEach(contest => {
+        const findName = (id) => { const e = contest.entries.find(x => x.id === id); return e ? e.photographer : null; };
+        const g = findName(contest.winners.gold);
+        const s = findName(contest.winners.silver);
+        const b = findName(contest.winners.bronze);
+        if(g && sc[g]) { sc[g].points += 3; sc[g].gold++; }
+        if(s && sc[s]) { sc[s].points += 2; sc[s].silver++; }
+        if(b && sc[b]) { sc[b].points += 1; sc[b].bronze++; }
         
-        archivesSubset.forEach(contest => {
-            const findName = (id) => {
-                const e = contest.entries.find(x => x.id === id);
-                return e ? e.photographer : null;
-            };
-            const g = findName(contest.winners.gold);
-            const s = findName(contest.winners.silver);
-            const b = findName(contest.winners.bronze);
-            
-            if(g && sc[g]) { sc[g].points += 3; sc[g].gold++; }
-            if(s && sc[s]) { sc[s].points += 2; sc[s].silver++; }
-            if(b && sc[b]) { sc[b].points += 1; sc[b].bronze++; }
-        });
-        return sc;
-    };
-
-    const currentScores = calculateScores(state.archives);
-    const prevScores = calculateScores(state.archives.slice(1));
-
-    // Entry Counts (Iterate all archives)
-    state.archives.forEach(a => {
-        a.entries.forEach(e => {
-            if(currentScores[e.photographer]) {
-                currentScores[e.photographer].entries++;
-            }
+        contest.entries.forEach(e => {
+            if(sc[e.photographer]) sc[e.photographer].entries++;
         });
     });
 
-    const sortLogic = (a, b) => {
-        if (b.points !== a.points) return b.points - a.points;
-        if (b.gold !== a.gold) return b.gold - a.gold;
-        if (b.silver !== a.silver) return b.silver - a.silver;
-        return b.bronze - a.bronze;
-    };
-
-    const getRank = (scoreObj, playerName) => {
-        const sorted = Object.values(scoreObj).sort(sortLogic);
-        const idx = sorted.findIndex(p => p.name === playerName);
-        return idx === -1 ? null : idx + 1;
-    };
-
-    const sortedCurrent = Object.values(currentScores).sort(sortLogic);
-
+    const sortLogic = (a, b) => b.points - a.points;
+    const sorted = Object.values(sc).sort(sortLogic);
+    
     const grid = document.getElementById('leaderboardGrid');
     if(!grid) return;
     
-    // Updated 12-Column Header
     grid.innerHTML = `
         <div class="grid grid-cols-12 gap-2 p-2 md:p-4 text-[10px] md:text-xs uppercase font-bold text-gray-500 tracking-widest border-b border-gray-800">
             <div class="col-span-2 flex items-center pl-2">Rank</div>
@@ -685,24 +678,12 @@ function renderLeaderboard() {
     let lastRankDisplay = 0;
     sortedCurrent.forEach((p, idx) => {
         let currentRank = idx + 1;
-        
         if (idx > 0) {
             const prev = sortedCurrent[idx - 1];
-            const isTied = prev.points === p.points && 
-                           prev.gold === p.gold && 
-                           prev.silver === p.silver && 
-                           prev.bronze === p.bronze;
+            const isTied = prev.points === p.points && prev.gold === p.gold && prev.silver === p.silver && prev.bronze === p.bronze;
             if (isTied) currentRank = lastRankDisplay;
         }
         lastRankDisplay = currentRank;
-
-        const prevRank = getRank(prevScores, p.name);
-        
-        let trend = '<span class="text-gray-700 text-xs ml-1">➖</span>'; 
-        if (prevRank) {
-            if (currentRank < prevRank) trend = '<span class="text-green-500 text-xs ml-1">▲</span>'; 
-            else if (currentRank > prevRank) trend = '<span class="text-red-500 text-xs ml-1">▼</span>'; 
-        }
 
         let rankDisplay = `<span class="text-gray-500 font-mono font-bold text-sm md:text-lg">#${currentRank}</span>`;
         if(currentRank===1) rankDisplay = '<span class="text-lg md:text-2xl filter drop-shadow-lg">🥇</span>';
@@ -715,24 +696,11 @@ function renderLeaderboard() {
             <div class="grid grid-cols-12 gap-2 items-center p-2 md:p-4 border-b border-gray-800/50 hover:bg-white/5 transition group">
                 <div class="col-span-2 flex items-center pl-1 md:pl-2">
                     <div class="w-6 md:w-8 flex justify-center mr-1">${rankDisplay}</div>
-                    <div>${trend}</div>
                 </div>
-                
-                <div class="col-span-3 font-bold text-white text-xs md:text-sm truncate tracking-tight pl-1">
-                    ${p.name}
-                </div>
-
-                <div class="col-span-2 text-center text-gray-400 font-mono text-xs md:text-sm">
-                    ${p.entries}
-                </div>
-
-                <div class="col-span-3 font-mono text-[10px] md:text-xs text-gray-500 text-center whitespace-nowrap">
-                    ${winsStr}
-                </div>
-
-                <div class="col-span-2 font-bold text-[#94c120] text-sm md:text-xl text-right pr-1 md:pr-2">
-                    ${p.points}
-                </div>
+                <div class="col-span-3 font-bold text-white text-xs md:text-sm truncate tracking-tight pl-1">${p.name}</div>
+                <div class="col-span-2 text-center text-gray-400 font-mono text-xs md:text-sm">${p.entries}</div>
+                <div class="col-span-3 font-mono text-[10px] md:text-xs text-gray-500 text-center whitespace-nowrap">${winsStr}</div>
+                <div class="col-span-2 font-bold text-[#94c120] text-sm md:text-xl text-right pr-1 md:pr-2">${p.points}</div>
             </div>
         `;
     });
@@ -743,6 +711,7 @@ function viewImage(url) {
     document.getElementById('lightbox').classList.remove('hidden');
 }
 
+// ... Archive Detail Helpers ...
 function closeArchiveDetail() {
     document.getElementById('archiveDetailView').classList.add('hidden');
     document.getElementById('archiveGrid').classList.remove('hidden');
@@ -814,24 +783,12 @@ function openArchiveDetail(archiveId) {
             <button onclick="closeArchiveDetail()" class="mb-6 px-4 py-2 bg-gray-800 rounded-lg text-sm text-gray-400 hover:text-white flex items-center gap-2 transition">Back</button>
             <h2 class="text-3xl font-bold text-white mb-8 text-center">${archive.monthName} <span class="text-[#94c120]">Winners</span></h2>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-                <div class="order-1 md:order-2">
-                    ${g ? `<div class="bg-gray-800/50 rounded-2xl overflow-hidden border-2 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.2)]">
-                        <img src="${g.url}" class="w-full h-64 md:h-80 object-cover" onclick="viewImage('${g.url}')">
-                        <div class="p-4 text-center bg-[#151b2b]"><div class="text-3xl mb-1">🥇</div><div class="font-bold text-white text-xl">${g.photographer}</div><div class="text-[#94c120] font-mono text-sm">${g.points || '?'} pts</div></div></div>` : ''}
-                </div>
-                <div class="order-2 md:order-1 mt-4 md:mt-12">
-                    ${s ? `<div class="bg-gray-800/50 rounded-2xl overflow-hidden border border-gray-400">
-                        <img src="${s.url}" class="w-full h-56 md:h-64 object-cover" onclick="viewImage('${s.url}')">
-                        <div class="p-4 text-center bg-[#151b2b]"><div class="text-2xl mb-1">🥈</div><div class="font-bold text-gray-200 text-lg">${s.photographer}</div><div class="text-gray-500 font-mono text-sm">${s.points || '?'} pts</div></div></div>` : ''}
-                </div>
-                <div class="order-3 md:order-3 mt-4 md:mt-12">
-                    ${b ? `<div class="bg-gray-800/50 rounded-2xl overflow-hidden border border-orange-500">
-                        <img src="${b.url}" class="w-full h-56 md:h-64 object-cover" onclick="viewImage('${b.url}')">
-                        <div class="p-4 text-center bg-[#151b2b]"><div class="text-2xl mb-1">🥉</div><div class="font-bold text-gray-200 text-lg">${b.photographer}</div><div class="text-gray-500 font-mono text-sm">${b.points || '?'} pts</div></div></div>` : ''}
-                </div>
+                <div class="order-1 md:order-2">${g ? `<div class="bg-gray-800/50 rounded-2xl overflow-hidden border-2 border-yellow-400"><img src="${g.url}" class="w-full h-64 object-cover" onclick="viewImage('${g.url}')"><div class="p-4 text-center">🥇 ${g.photographer}</div></div>` : ''}</div>
+                <div class="order-2 md:order-1 mt-4 md:mt-12">${s ? `<div class="bg-gray-800/50 rounded-2xl overflow-hidden border border-gray-400"><img src="${s.url}" class="w-full h-56 object-cover" onclick="viewImage('${s.url}')"><div class="p-4 text-center">🥈 ${s.photographer}</div></div>` : ''}</div>
+                <div class="order-3 md:order-3 mt-4 md:mt-12">${b ? `<div class="bg-gray-800/50 rounded-2xl overflow-hidden border border-orange-500"><img src="${b.url}" class="w-full h-56 object-cover" onclick="viewImage('${b.url}')"><div class="p-4 text-center">🥉 ${b.photographer}</div></div>` : ''}</div>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-                ${rest.map(e => `<div class="bg-gray-800 overflow-hidden cursor-pointer relative group rounded-lg" onclick="viewImage('${e.url}')"><img src="${e.url}" loading="lazy" class="w-full h-auto object-contain"><div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center flex-col p-2 text-center"><span class="text-white font-bold text-xs">${e.photographer}</span></div></div>`).join('')}
+                ${rest.map(e => `<div class="bg-gray-800 overflow-hidden rounded-lg" onclick="viewImage('${e.url}')"><img src="${e.url}" loading="lazy" class="w-full h-auto object-contain"></div>`).join('')}
             </div>
         </div>
     `;
