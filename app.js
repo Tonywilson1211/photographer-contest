@@ -398,7 +398,7 @@ function renderGallery() {
     grid.innerHTML = '';
     
     if(!state.activeContest || state.entries.length === 0) {
-        grid.innerHTML = `<div class="col-span-3 text-center text-gray-500 py-10">Waiting for photos... (Contest: ${state.activeContest ? state.activeContest.id : 'None'})</div>`;
+        grid.innerHTML = `<div class="col-span-3 text-center text-gray-500 py-10">Waiting for photos...</div>`;
         return;
     }
 
@@ -420,36 +420,60 @@ function renderGallery() {
         if(state.votes[3] === entry.id) rank = 3;
 
         let borderClass = 'border-gray-700';
-        let opacityClass = 'opacity-100';
+        let opacityClass = 'opacity-100'; // Always fully visible
         
-        if (rank === 1) borderClass = 'border-yellow-400 ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.4)]';
-        else if (rank === 2) borderClass = 'border-gray-300 ring-2 ring-gray-300';
-        else if (rank === 3) borderClass = 'border-orange-500 ring-2 ring-orange-500';
-        
-        // NO GREYING OUT when locked (legacy or new)
+        // Active Voting Styles (Borders only)
         if (!isLocked) {
+            if (rank === 1) borderClass = 'border-yellow-400 ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.4)]';
+            else if (rank === 2) borderClass = 'border-gray-300 ring-2 ring-gray-300';
+            else if (rank === 3) borderClass = 'border-orange-500 ring-2 ring-orange-500';
+            
+            // Dim others ONLY if 3 votes used and we are NOT locked yet
             const votesCast = Object.values(state.votes).filter(x=>x).length;
             if (votesCast === 3 && rank === 0) opacityClass = 'opacity-40 grayscale';
+        } else {
+            // Locked State: No borders, rely on footer bars
+            borderClass = 'border-gray-800'; 
         }
 
         const el = document.createElement('div');
         el.className = `bg-gray-800 rounded-xl overflow-hidden border transition-all duration-300 transform ${borderClass} ${opacityClass}`;
         
+        // FOOTER LOGIC
+        let footerContent = '';
+        
+        if (isLocked) {
+            // LOCKED STATE: Full width colored bars
+            if (rank === 1) {
+                footerContent = `<div class="w-full py-3 bg-[#94c120] text-black font-bold text-center uppercase tracking-widest text-xs">1st Place</div>`;
+            } else if (rank === 2) {
+                footerContent = `<div class="w-full py-3 bg-gray-300 text-black font-bold text-center uppercase tracking-widest text-xs">2nd Place</div>`;
+            } else if (rank === 3) {
+                footerContent = `<div class="w-full py-3 bg-orange-500 text-white font-bold text-center uppercase tracking-widest text-xs">3rd Place</div>`;
+            } else {
+                // Empty dark bar to keep grid cards the same height
+                footerContent = `<div class="w-full py-3 bg-gray-900/50 text-gray-700 text-center text-[10px] uppercase tracking-widest">&nbsp;</div>`;
+            }
+        } else if (!isMine && !showNames) {
+            // ACTIVE VOTING STATE: Buttons
+            footerContent = `
+                <div class="p-2 flex gap-1 justify-center bg-gray-800">
+                    <button onclick="castVote(1, '${entry.id}')" class="flex-1 py-2 rounded text-xs font-bold transition ${rank===1 ? 'bg-[#94c120] text-black' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}">1st</button>
+                    <button onclick="castVote(2, '${entry.id}')" class="flex-1 py-2 rounded text-xs font-bold transition ${rank===2 ? 'bg-gray-200 text-black' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}">2nd</button>
+                    <button onclick="castVote(3, '${entry.id}')" class="flex-1 py-2 rounded text-xs font-bold transition ${rank===3 ? 'bg-orange-500 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}">3rd</button>
+                </div>
+            `;
+        } else if (showNames || isMine) {
+            // Name Display
+            footerContent = `<div class="p-2 text-center text-xs font-bold text-gray-400 border-t border-gray-700">${entry.photographer}</div>`;
+        }
+
         el.innerHTML = `
             <div class="relative bg-gray-900 group cursor-pointer" onclick="viewImage('${entry.url}')">
                 <img src="${entry.url}" loading="lazy" class="w-full h-auto object-contain">
                 ${isMine ? '<span class="absolute top-2 right-2 bg-[#94c120] text-black text-[10px] font-bold px-2 py-1 rounded">YOU</span>' : ''}
             </div>
-            
-            ${ (showNames || isMine) ? `<div class="p-2 text-center text-xs font-bold text-gray-400 border-t border-gray-700">${entry.photographer}</div>` : '' }
-
-            ${ (!isMine && !showNames) ? `
-                <div class="p-2 flex gap-1 justify-center bg-gray-800">
-                    <button ${isLocked ? 'disabled' : ''} onclick="castVote(1, '${entry.id}')" class="flex-1 py-2 rounded text-xs font-bold transition ${rank===1 ? 'bg-[#94c120] text-black' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}">1st</button>
-                    <button ${isLocked ? 'disabled' : ''} onclick="castVote(2, '${entry.id}')" class="flex-1 py-2 rounded text-xs font-bold transition ${rank===2 ? 'bg-gray-200 text-black' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}">2nd</button>
-                    <button ${isLocked ? 'disabled' : ''} onclick="castVote(3, '${entry.id}')" class="flex-1 py-2 rounded text-xs font-bold transition ${rank===3 ? 'bg-orange-500 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}">3rd</button>
-                </div>
-            ` : '' }
+            ${footerContent}
         `;
         grid.appendChild(el);
     });
@@ -636,14 +660,29 @@ async function adminFinalizeArchive() {
 }
 
 function renderLeaderboard() {
+    const grid = document.getElementById('leaderboardGrid');
+    if(!grid) return;
+
+    // 1. Initialize Scores with ALL Team Members (Default 0)
     let sc = {};
-    state.teamMembers.forEach(m => sc[m] = { name: m, points: 0, gold: 0, silver: 0, bronze: 0, entries: 0 });
+    // Use the loaded team list, or fallback to default if loading failed
+    const roster = state.teamMembers.length > 0 ? state.teamMembers : DEFAULT_TEAM;
     
+    roster.forEach(m => {
+        sc[m] = { name: m, points: 0, gold: 0, silver: 0, bronze: 0, entries: 0 };
+    });
+
+    // 2. Add Points from History
     state.archives.forEach(contest => {
-        const findName = (id) => { const e = contest.entries.find(x => x.id === id); return e ? e.photographer : null; };
+        const findName = (id) => { 
+            const e = contest.entries.find(x => x.id === id); 
+            return e ? e.photographer : null; 
+        };
+        
         const g = findName(contest.winners.gold);
         const s = findName(contest.winners.silver);
         const b = findName(contest.winners.bronze);
+        
         if(g && sc[g]) { sc[g].points += 3; sc[g].gold++; }
         if(s && sc[s]) { sc[s].points += 2; sc[s].silver++; }
         if(b && sc[b]) { sc[b].points += 1; sc[b].bronze++; }
@@ -653,25 +692,17 @@ function renderLeaderboard() {
         });
     });
 
-    const sortLogic = (a, b) => b.points - a.points;
-    const sorted = Object.values(sc).sort(sortLogic);
+    // 3. Sort
+    const sortedCurrent = Object.values(sc).sort((a, b) => b.points - a.points);
     
-    const grid = document.getElementById('leaderboardGrid');
-    if(!grid) return;
-    
+    // 4. Render (YOUR EXACT DESIGN)
     grid.innerHTML = `
-        <div class="grid grid-cols-12 gap-2 p-2 md:p-4 text-[10px] md:text-xs uppercase font-bold text-gray-500 tracking-widest border-b border-gray-800">
+        <div class="grid grid-cols-12 gap-2 p-2 md:p-4 text-[10px] md:text-xs uppercase font-bold text-gray-500 tracking-widest border-b border-gray-800 bg-gray-900/50 sticky top-0">
             <div class="col-span-2 flex items-center pl-2">Rank</div>
             <div class="col-span-3 flex items-center">Name</div>
-            <div class="col-span-2 flex items-center justify-center">
-                <span class="md:hidden">ENT</span><span class="hidden md:inline">Entries</span>
-            </div>
-            <div class="col-span-3 flex items-center justify-center">
-                <span class="md:hidden">WINS</span><span class="hidden md:inline">Wins (G/S/B)</span>
-            </div>
-            <div class="col-span-2 flex items-center justify-end pr-2">
-                <span class="md:hidden">PTS</span><span class="hidden md:inline">Total Pts</span>
-            </div>
+            <div class="col-span-2 flex items-center justify-center"><span class="md:hidden">ENT</span><span class="hidden md:inline">Entries</span></div>
+            <div class="col-span-3 flex items-center justify-center"><span class="md:hidden">WINS</span><span class="hidden md:inline">Wins (G/S/B)</span></div>
+            <div class="col-span-2 flex items-center justify-end pr-2"><span class="md:hidden">PTS</span><span class="hidden md:inline">Total Pts</span></div>
         </div>
     `;
 
@@ -680,6 +711,7 @@ function renderLeaderboard() {
         let currentRank = idx + 1;
         if (idx > 0) {
             const prev = sortedCurrent[idx - 1];
+            // Handle Ties
             const isTied = prev.points === p.points && prev.gold === p.gold && prev.silver === p.silver && prev.bronze === p.bronze;
             if (isTied) currentRank = lastRankDisplay;
         }
