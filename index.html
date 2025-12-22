@@ -24,6 +24,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
 </head>
 <body class="bg-gray-900 text-gray-100 font-sans min-h-screen select-none">
 
@@ -38,7 +39,7 @@
 
             <div class="space-y-4">
                 <select id="loginName" onchange="checkPinRequirement()" class="w-full bg-gray-800/50 border border-gray-600 text-white rounded-xl p-4 text-lg focus:ring-2 focus:ring-[#94c120] outline-none appearance-none text-center font-bold">
-                    <option value="" disabled selected>Tap to select name...</option>
+                    <option value="" disabled selected>Loading Team...</option>
                 </select>
 
                 <div id="pinSection" class="hidden">
@@ -48,7 +49,7 @@
                 <button onclick="attemptLogin()" class="w-full bg-[#94c120]/10 border border-[#94c120] text-white font-bold py-4 rounded-xl shadow-[0_0_15px_rgba(148,193,32,0.3)] hover:bg-[#94c120]/20 transition transform active:scale-95 flex flex-col items-center justify-center text-center">
                     Enter Dashboard
                 </button>
-                <p class="text-[10px] text-gray-500 mt-4 font-mono opacity-50 text-center">v1.0.3</p>
+                <p class="text-[10px] text-gray-500 mt-4 font-mono opacity-50 text-center">v2.2 Admin Tools</p>
             </div>
         </div>
     </div>
@@ -81,6 +82,11 @@
                     <p class="text-[#94c120] text-sm relative z-10">View active entries & vote</p>
                 </button>
 
+                <button onclick="navTo('upload')" class="bg-gray-800/50 border border-gray-600 p-4 rounded-xl text-center hover:bg-gray-800 transition">
+                    <h3 class="font-bold text-white">Submit for Next Month</h3>
+                    <p class="text-gray-400 text-xs">Upload your entries</p>
+                </button>
+
                 <div class="grid grid-cols-2 gap-4">
                     <button onclick="navTo('leaderboard')" class="glass p-4 rounded-xl hover:bg-gray-800 transition flex flex-col items-center justify-center text-center h-32">
                         <div class="mb-2"><svg class="w-8 h-8 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg></div>
@@ -95,15 +101,34 @@
                 </div>
             </div>
 
+            <div id="view-upload" class="view-section hidden">
+                <h2 id="uploadTitle" class="text-xl font-bold text-white mb-4">Enter Next Month</h2>
+                <div class="bg-gray-800/50 p-4 rounded-lg border border-gray-700 mb-6 text-xs text-gray-400 leading-relaxed">
+                    <p class="font-bold text-white mb-2">Instructions:</p>
+                    To enter the upcoming Photo of the Month, tap the link below and upload images directly from your device’s photo library. If your image isn’t already saved on your device, open the download link for the relevant order in Safari, select the LOW RES version of the image, and tap View when prompted. Press and hold the image, then choose Save to Photos. Return to the upload page, select the saved image from your library, and submit your entry. You can upload up to three images per monthly competition.
+                </div>
+                <div id="uploadContainer" class="space-y-4">
+                    <label class="block w-full aspect-video bg-gray-800 border-2 border-dashed border-gray-600 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-[#94c120] transition group">
+                        <div class="text-4xl mb-2 group-hover:scale-110 transition">📤</div>
+                        <span class="font-bold text-gray-400 group-hover:text-white">Tap to Select Photo</span>
+                        <input type="file" id="fileInput" accept="image/*" class="hidden" onchange="handleFileUpload(this)">
+                    </label>
+                    <p id="uploadStatus" class="text-center text-xs text-gray-500"></p>
+                </div>
+                <div class="mt-8">
+                    <h3 class="text-sm font-bold text-gray-400 uppercase mb-2">Your Entries (<span id="uploadCount">0</span>/3)</h3>
+                    <div id="uploadGrid" class="grid grid-cols-2 md:grid-cols-3 gap-4"></div>
+                </div>
+            </div>
+
             <div id="view-gallery" class="view-section hidden">
                 <div id="galleryHeader" class="flex justify-between items-center mb-4">
                     <h2 class="text-xl font-bold" id="galleryTitle">Gallery</h2>
                     <div id="voteCounter" class="px-3 py-1 bg-gray-800 rounded-full text-xs font-mono text-gray-400">Votes: 0/3</div>
                 </div>
-
                 <div id="galleryGrid" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4"></div>
-                
-                <div class="h-24"></div> <button id="submitBtn" onclick="submitVotes()" class="hidden fixed bottom-24 right-6 left-6 md:left-auto md:w-64 bg-[#94c120] hover:bg-[#82a81c] text-black font-bold py-4 rounded-full shadow-[0_0_20px_rgba(148,193,32,0.4)] transition transform hover:scale-105 z-30">
+                <div class="h-24"></div> 
+                <button id="submitBtn" onclick="submitVotes()" class="hidden fixed bottom-24 right-6 left-6 md:left-auto md:w-64 bg-[#94c120] hover:bg-[#82a81c] text-black font-bold py-4 rounded-full shadow-[0_0_20px_rgba(148,193,32,0.4)] transition transform hover:scale-105 z-30">
                     Submit 3 Votes ✅
                 </button>
             </div>
@@ -112,9 +137,7 @@
                 <button onclick="loadMegaArchive()" class="w-full mb-6 bg-[#94c120]/20 border border-[#94c120]/30 text-[#94c120] py-3 rounded-xl font-bold hover:bg-[#94c120] hover:text-white transition">
                     ✨ View "All-Time" Grid
                 </button>
-                
                 <div id="archiveGrid" class="space-y-4"></div>
-                
                 <div id="megaArchive" class="hidden">
                     <div class="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
                          <button onclick="renderArchives()" class="px-4 py-2 bg-gray-800 rounded-lg text-sm text-gray-400 hover:text-white whitespace-nowrap">← Folders</button>
@@ -124,14 +147,13 @@
                     </div>
                     <div id="megaGrid" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4"></div>
                 </div>
-
                 <div id="archiveDetailView" class="hidden"></div>
             </div>
 
             <div id="view-leaderboard" class="view-section hidden">
                 <h2 class="text-2xl font-bold mb-4 text-yellow-500">Season Standings</h2>
                 <div class="bg-gray-800/50 rounded-2xl overflow-hidden border border-gray-700" id="leaderboardGrid">
-                    </div>
+                </div>
             </div>
 
         </main>
@@ -141,6 +163,10 @@
                 <button onclick="navTo('landing')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-gray-500 transition" data-target="landing">
                     <span class="mb-1"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg></span>
                     <span class="text-[10px] font-bold uppercase">Home</span>
+                </button>
+                <button onclick="navTo('upload')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-gray-500 transition" data-target="upload">
+                    <span class="mb-1"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg></span>
+                    <span class="text-[10px] font-bold uppercase">Upload</span>
                 </button>
                 <button onclick="navTo('gallery')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-gray-500 transition" data-target="gallery">
                     <span class="mb-1"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg></span>
@@ -164,13 +190,24 @@
     </div>
 
     <div id="view-admin" class="hidden fixed inset-0 z-[70] bg-black/90 flex items-center justify-center p-4">
-        <div class="bg-gray-800 w-full max-w-lg rounded-2xl border border-gray-700 p-6 shadow-2xl relative">
+        <div class="bg-gray-800 w-full max-w-lg rounded-2xl border border-gray-700 p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
             <button onclick="document.getElementById('view-admin').classList.add('hidden')" class="absolute top-4 right-4 text-gray-400 text-2xl">&times;</button>
             <h2 class="text-2xl font-bold text-white mb-6">Admin Console</h2>
             
             <div class="space-y-6">
+                
                 <div class="bg-gray-900 p-4 rounded-xl border border-gray-700">
-                    <label class="text-xs text-gray-400 uppercase font-bold">New Month</label>
+                    <h3 class="font-bold text-white text-sm mb-2 uppercase tracking-wide">Manage Team</h3>
+                    <div class="flex gap-2 mb-2">
+                        <input id="newMemberName" placeholder="New Member Name" class="bg-gray-800 text-white p-2 rounded-lg w-full text-sm border border-gray-600">
+                        <button onclick="adminAddTeamMember()" class="bg-green-600 text-white px-4 rounded-lg font-bold">+</button>
+                    </div>
+                    <div id="adminTeamList" class="max-h-32 overflow-y-auto bg-black/30 p-2 rounded text-xs space-y-1">
+                        </div>
+                </div>
+
+                <div class="bg-gray-900 p-4 rounded-xl border border-gray-700">
+                    <label class="text-xs text-gray-400 uppercase font-bold">Manual Contest Creation</label>
                     <div class="flex gap-2 mt-2">
                         <input id="newContestName" placeholder="Name (e.g. March)" class="bg-gray-800 text-white p-3 rounded-lg w-1/2 outline-none">
                         <input id="newContestId" placeholder="ID (2026-03)" class="bg-gray-800 text-white p-3 rounded-lg w-1/2 outline-none">
@@ -179,19 +216,27 @@
                 </div>
 
                 <div class="p-4 bg-gray-900 rounded-xl border border-gray-700">
-                    <h3 class="font-bold text-white mb-2">Contest Control</h3>
-                    
-                    <!-- NEW: Vote Tracking -->
+                    <h3 class="font-bold text-white mb-2">Voting Control</h3>
                     <button onclick="adminCheckVotes()" class="w-full mb-4 bg-blue-900/30 text-blue-400 border border-blue-500/30 py-3 rounded-lg font-bold hover:bg-blue-900/50 transition">
                         📊 Check Voting Status
                     </button>
                     <div id="adminVoteList" class="hidden mb-4 bg-black/40 p-4 rounded-lg border border-gray-700 max-h-48 overflow-y-auto"></div>
-
-                    <p class="text-xs text-gray-400 mb-4">Click below to tally votes, declare winners, and archive this month.</p>
                     <button id="btnEndContest" onclick="adminFinalizeArchive()" class="w-full bg-[#94c120]/20 text-[#94c120] border border-[#94c120] py-4 rounded-xl font-bold hover:bg-[#94c120] hover:text-black transition disabled:opacity-50 disabled:cursor-not-allowed">
-                        🏁 Tally Votes & Close Contest
+                        🏁 Tally Votes & Close
                     </button>
                 </div>
+
+                <div class="bg-red-900/10 p-4 rounded-xl border border-red-900/30">
+                    <h3 class="font-bold text-red-400 text-sm mb-2 uppercase tracking-wide">Storage Management</h3>
+                    <p class="text-xs text-gray-400 mb-2">Delete photo files to save space/cost. Data remains in history.</p>
+                    <select id="storagePurgeSelect" class="w-full bg-gray-900 text-white p-2 rounded mb-2 border border-gray-700 text-sm">
+                        <option value="" disabled selected>Select Archive to Purge...</option>
+                    </select>
+                    <button onclick="adminPurgeImages()" class="w-full bg-red-600/20 text-red-400 border border-red-500 py-2 rounded-lg font-bold hover:bg-red-600 hover:text-white transition">
+                        🗑️ Purge Photos
+                    </button>
+                </div>
+
             </div>
         </div>
     </div>

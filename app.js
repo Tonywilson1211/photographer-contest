@@ -11,54 +11,76 @@ const firebaseConfig = {
 if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
+const storage = firebase.storage();
 
 // --- 2. STATE ---
 let state = {
     currentUser: localStorage.getItem('photoUser') || null,
     isAdmin: false,
-    activeContest: null,
+    activeContest: null,      
+    submissionContest: null,
+    nextMonthId: null,
+    nextMonthName: null,
     entries: [],
     archives: [],
-    megaEntries: [],
     shuffledEntries: [],
     votes: { 1: null, 2: null, 3: null },
-    hasVotedLocally: false
+    hasVotedLocally: false,
+    myUploads: [],
+    teamMembers: [] 
 };
 
 let entriesUnsubscribe = null;
+let uploadsUnsubscribe = null;
 
-const TEAM_MEMBERS = [
-    "Ivan Pecek", 
-    "Jack Wickes", 
-    "James Wilson", 
-    "James Denton",
-    "Jemma Ridyard",
-    "Jennifer Turnham", 
-    "Kacper Chodyra", 
-    "Kyle Plastock", 
-    "Lloyd Woodger",
-    "Luke Evans",
-    "Paul Udogaranya", 
-    "Rainer Knappe", 
-    "Raul Caramizaru",
-    "Thomas McPherson", 
-    "William Howe", 
-    "Anthony Wilson"
+const DEFAULT_TEAM = [
+    "Ivan Pecek", "Jack Wickes", "James Wilson", "James Denton",
+    "Jemma Ridyard", "Jennifer Turnham", "Kacper Chodyra", "Kyle Plastock", 
+    "Lloyd Woodger", "Luke Evans", "Paul Udogaranya", "Rainer Knappe", 
+    "Raul Caramizaru", "Thomas McPherson", "William Howe", "Anthony Wilson"
 ];
 
 // --- 3. INIT ---
 document.addEventListener('DOMContentLoaded', () => {
-    populateLoginDropdown();
-    if (state.currentUser) {
-        document.getElementById('loginName').value = state.currentUser;
-        checkPinRequirement();
-    }
+    console.log("🚀 App Initializing...");
+    calculateNextMonth();
+    initTeam();
 });
 
-// --- 4. AUTH & NAVIGATION ---
+function calculateNextMonth() {
+    const now = new Date();
+    let nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const y = nextDate.getFullYear();
+    const m = String(nextDate.getMonth() + 1).padStart(2, '0');
+    state.nextMonthId = `${y}-${m}`;
+    state.nextMonthName = nextDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+}
+
+// --- 4. TEAM & AUTH ---
+async function initTeam() {
+    try {
+        const doc = await db.collection('config').doc('settings').get();
+        if (doc.exists && doc.data().teamMembers) {
+            state.teamMembers = doc.data().teamMembers.sort();
+        } else {
+            state.teamMembers = DEFAULT_TEAM;
+        }
+    } catch (e) {
+        state.teamMembers = DEFAULT_TEAM;
+    }
+    populateLoginDropdown();
+    if (state.currentUser) {
+        const input = document.getElementById('loginName');
+        if(input) input.value = state.currentUser;
+        checkPinRequirement();
+    }
+}
+
 function populateLoginDropdown() {
     const s = document.getElementById('loginName');
-    TEAM_MEMBERS.sort().forEach(n => {
+    if(!s) return;
+    s.innerHTML = '<option value="" disabled selected>Tap to select name...</option>';
+    state.teamMembers.forEach(n => {
         const o = document.createElement('option');
         o.value = n; o.textContent = n;
         s.appendChild(o);
@@ -66,16 +88,21 @@ function populateLoginDropdown() {
 }
 
 function checkPinRequirement() {
-    const n = document.getElementById('loginName').value;
-    document.getElementById('pinSection').classList.toggle('hidden', n !== "Anthony Wilson");
+    const s = document.getElementById('loginName');
+    if(!s) return;
+    const pinEl = document.getElementById('pinSection');
+    if(pinEl) pinEl.classList.toggle('hidden', s.value !== "Anthony Wilson");
 }
 
 function attemptLogin() {
-    const name = document.getElementById('loginName').value;
+    const s = document.getElementById('loginName');
+    if(!s) return;
+    const name = s.value;
     if (!name) return;
     
     if (name === "Anthony Wilson") {
-        if (document.getElementById('loginPin').value !== "673191") return alert("Wrong PIN");
+        const pin = document.getElementById('loginPin').value;
+        if (pin !== "673191") return alert("Wrong PIN");
         state.isAdmin = true;
     }
 
@@ -86,10 +113,18 @@ function attemptLogin() {
         document.getElementById('loginScreen').classList.add('hidden');
         document.getElementById('mainApp').classList.remove('hidden');
         document.getElementById('userNameDisplay').textContent = name.split(' ')[0]; 
-        if (state.isAdmin) document.getElementById('navAdmin').classList.remove('hidden');
+        
+        if (state.isAdmin) {
+            const navAdmin = document.getElementById('navAdmin');
+            if(navAdmin) navAdmin.classList.remove('hidden');
+            if(document.getElementById('adminTeamList')) renderAdminTeamList();
+        }
         
         startDataSync(); 
         navTo('landing');
+    }).catch(e => {
+        console.error("Login Error", e);
+        alert("Login failed: " + e.message);
     });
 }
 
@@ -99,82 +134,99 @@ function navTo(sectionId) {
     const target = document.getElementById(`view-${sectionId}`);
     if (target) target.classList.remove('hidden');
 
-    // Background Logic: Show only on Login, Hide on Dashboard
-    // But since this function runs INSIDE the dashboard context, we actually want to HIDE it here.
-    // The background is already on <body> or fixed div.
-    // We want the photo background GONE for readability inside the app.
     const bg = document.getElementById('dynamicBg');
     const grad = document.getElementById('gradientOverlay');
-    
-    // We keep opacity low/off for dashboard
-    bg.classList.add('opacity-0');
-    bg.classList.remove('opacity-60');
-    
-    // Make gradient fully opaque dark for readability
-    grad.classList.remove('from-gray-900', 'via-gray-900/70', 'to-gray-900/50');
-    grad.classList.add('bg-gray-900'); // Solid color
+    if(bg) { bg.classList.add('opacity-0'); bg.classList.remove('opacity-60'); }
+    if(grad) { grad.classList.remove('from-gray-900', 'via-gray-900/70', 'to-gray-900/50'); grad.classList.add('bg-gray-900'); }
 
     document.querySelectorAll('.nav-btn').forEach(btn => {
         const isTarget = btn.dataset.target === sectionId;
         btn.className = `nav-btn flex flex-col items-center justify-center w-full h-full transition ${isTarget ? 'text-[#94c120]' : 'text-gray-600'}`;
         const icon = btn.querySelector('span');
-        if(isTarget) icon.classList.add('drop-shadow-[0_0_8px_rgba(148,193,32,0.5)]');
-        else icon.classList.remove('drop-shadow-[0_0_8px_rgba(148,193,32,0.5)]');
+        if(icon) {
+            if(isTarget) icon.classList.add('drop-shadow-[0_0_8px_rgba(148,193,32,0.5)]');
+            else icon.classList.remove('drop-shadow-[0_0_8px_rgba(148,193,32,0.5)]');
+        }
     });
 
     if (sectionId === 'gallery') renderGallery();
     if (sectionId === 'archives') renderArchives();
     if (sectionId === 'leaderboard') renderLeaderboard();
+    if (sectionId === 'upload') renderUploadView();
 }
 
-// --- 5. DATA ENGINE (FIXED) ---
+// --- 5. DATA ENGINE ---
 function startDataSync() {
+    console.log("🔌 Connecting to DB...");
+    
     db.collection("contests").onSnapshot(snapshot => {
         if (snapshot.empty) {
-            state.activeContest = null;
-            state.entries = [];
-            if(entriesUnsubscribe) entriesUnsubscribe();
-            updateHomeUI(null); 
-            renderGallery();
+            handleNoContests();
             return;
         }
 
         const allContests = snapshot.docs.map(d => ({...d.data(), id: d.id}));
-        allContests.sort((a, b) => b.id.localeCompare(a.id));
-
-        const latest = allContests[0];
         
-        // Check if ID changed to force re-sync
-        const idChanged = !state.activeContest || state.activeContest.id !== latest.id;
+        let votingContest = allContests.find(c => c.status === 'voting');
+        let subContest = allContests.find(c => c.status === 'submissions_open');
 
-        if (latest.status === 'closed') {
-             state.activeContest = null;
-             state.entries = [];
-             if(entriesUnsubscribe) entriesUnsubscribe();
-             updateHomeUI(null);
-             renderGallery();
+        if (!subContest) {
+            state.submissionContest = { 
+                id: state.nextMonthId, 
+                monthName: state.nextMonthName, 
+                status: 'virtual' 
+            };
+            syncMyUploads(state.nextMonthId);
         } else {
-             state.activeContest = latest;
-             const userKey = `voted_${latest.id}_${state.currentUser}`;
-             state.hasVotedLocally = !!localStorage.getItem(userKey);
-             updateHomeUI(latest);
-             if(idChanged) syncEntries(latest.id);
+            const subIdChanged = !state.submissionContest || state.submissionContest.id !== subContest.id;
+            state.submissionContest = subContest;
+            if(subIdChanged) syncMyUploads(subContest.id);
         }
+
+        if (votingContest) {
+            const idChanged = !state.activeContest || state.activeContest.id !== votingContest.id;
+            state.activeContest = votingContest;
+            
+            const userKey = `voted_${votingContest.id}_${state.currentUser}`;
+            state.hasVotedLocally = !!localStorage.getItem(userKey);
+            
+            const savedVotes = localStorage.getItem(userKey + '_data');
+            if(savedVotes) state.votes = JSON.parse(savedVotes);
+
+            if(idChanged) syncEntries(votingContest.id);
+        } else {
+            state.activeContest = null;
+            state.entries = [];
+            if(entriesUnsubscribe) entriesUnsubscribe();
+        }
+
+        updateHomeUI(votingContest);
+        if(document.getElementById('view-gallery') && !document.getElementById('view-gallery').classList.contains('hidden')) renderGallery();
+        if(document.getElementById('view-upload') && !document.getElementById('view-upload').classList.contains('hidden')) renderUploadView();
     });
 
-    // Sync Archives separateley
     db.collection("archives").onSnapshot(snap => {
         state.archives = snap.docs.map(d => d.data()).sort((a,b) => b.id.localeCompare(a.id));
+        if(document.getElementById('storagePurgeSelect')) updateStorageDropdown();
     });
+}
+
+function handleNoContests() {
+    state.activeContest = null;
+    state.submissionContest = { id: state.nextMonthId, monthName: state.nextMonthName, status: 'virtual' };
+    syncMyUploads(state.nextMonthId);
+    state.entries = [];
+    updateHomeUI(null);
+    renderGallery();
 }
 
 function syncEntries(contestId) {
     if (entriesUnsubscribe) entriesUnsubscribe();
+    console.log("📥 Syncing entries for:", contestId);
 
     entriesUnsubscribe = db.collection("contests").doc(contestId).collection("entries").onSnapshot(snap => {
         state.entries = snap.docs.map(d => d.data());
         
-        // Shuffle only if needed (on first load or reset)
         if (state.shuffledEntries.length === 0 || state.shuffledEntries.length !== state.entries.length) {
             state.shuffledEntries = [...state.entries];
             for (let i = state.shuffledEntries.length - 1; i > 0; i--) {
@@ -183,33 +235,122 @@ function syncEntries(contestId) {
             }
         }
         
-        if (!document.getElementById('view-gallery').classList.contains('hidden')) {
-            renderGallery();
-        }
+        renderGallery();
     });
 }
 
-// --- 6. UI UPDATERS ---
+function syncMyUploads(contestId) {
+    if (uploadsUnsubscribe) uploadsUnsubscribe();
+    
+    uploadsUnsubscribe = db.collection("contests").doc(contestId).collection("entries")
+        .where("photographer", "==", state.currentUser)
+        .onSnapshot(snap => {
+            state.myUploads = snap.docs.map(d => d.data());
+            renderUploadView();
+        });
+}
+
+// --- 6. UPLOAD LOGIC ---
+async function handleFileUpload(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const targetContest = state.submissionContest;
+
+    if (state.myUploads.length >= 3) {
+        alert("You have already uploaded 3 images for this contest.");
+        input.value = "";
+        return;
+    }
+
+    const status = document.getElementById('uploadStatus');
+    if(status) status.textContent = "Uploading... please wait.";
+    
+    try {
+        const contestRef = db.collection("contests").doc(targetContest.id);
+        const docSnap = await contestRef.get();
+        if (!docSnap.exists) {
+            await contestRef.set({
+                monthName: targetContest.monthName,
+                status: 'submissions_open'
+            });
+        }
+
+        const storageRef = storage.ref(`contest_photos/${targetContest.id}/${state.currentUser}/${file.name}`);
+        const snapshot = await storageRef.put(file);
+        const downloadUrl = await snapshot.ref.getDownloadURL();
+
+        const entryId = `${state.currentUser}-${Date.now()}`.replace(/[^a-zA-Z0-9]/g, "_");
+        
+        await contestRef.collection("entries").doc(entryId).set({
+            id: entryId,
+            photographer: state.currentUser,
+            url: downloadUrl,
+            uploadedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            votes: 0
+        });
+
+        if(status) {
+            status.textContent = "Upload Complete! ✅";
+            setTimeout(() => status.textContent = "", 3000);
+        }
+
+    } catch (error) {
+        console.error("Upload failed", error);
+        if(status) status.textContent = "Error uploading. Try again.";
+    }
+    input.value = "";
+}
+
+function renderUploadView() {
+    const view = document.getElementById('view-upload');
+    if(!view || view.classList.contains('hidden')) return;
+
+    const title = document.getElementById('uploadTitle');
+    const container = document.getElementById('uploadContainer');
+    const grid = document.getElementById('uploadGrid');
+    const count = document.getElementById('uploadCount');
+
+    if (!state.submissionContest) {
+        if(title) title.textContent = "Loading...";
+        return;
+    }
+
+    if(title) title.textContent = `Enter ${state.submissionContest.monthName}`;
+    if(container) container.classList.remove('opacity-50', 'pointer-events-none');
+    if(count) count.textContent = state.myUploads.length;
+
+    if(grid) {
+        grid.innerHTML = '';
+        state.myUploads.forEach(entry => {
+            grid.innerHTML += `
+                <div class="relative bg-gray-800 rounded-lg overflow-hidden border border-gray-600 aspect-square">
+                    <img src="${entry.url}" class="w-full h-full object-cover opacity-80">
+                    <div class="absolute bottom-0 w-full bg-black/60 p-1 text-center text-[10px] text-green-400 font-bold">EMBEDDED</div>
+                </div>
+            `;
+        });
+    }
+}
+
+// --- 7. UI RENDERERS ---
 function updateHomeUI(contest) {
     const title = document.getElementById('homeMainTitle');
     const badge = document.getElementById('homeStatusBadge');
     const desc = document.getElementById('homeMainDesc');
     const endBtn = document.getElementById('btnEndContest');
 
-    if (!contest || contest.status === 'closed') {
-        title.textContent = "No Contest Active";
-        badge.textContent = "Idle";
+    if(!title) return;
+
+    if (!contest) {
+        title.textContent = "No Active Voting";
+        badge.textContent = "Waiting";
         badge.className = "inline-block px-3 py-1 rounded-full bg-gray-800 text-gray-500 text-xs font-bold uppercase tracking-wider mb-3";
-        desc.textContent = "Check back later or view archives.";
-        
-        if(endBtn) {
-            endBtn.disabled = true;
-            endBtn.classList.add('opacity-50', 'cursor-not-allowed');
-        }
+        desc.textContent = "Check back later or submit for next month.";
+        if(endBtn) endBtn.disabled = true;
         return;
     }
 
-    // Active Contest Logic
     if(endBtn) {
         endBtn.disabled = false;
         endBtn.classList.remove('opacity-50', 'cursor-not-allowed');
@@ -217,21 +358,20 @@ function updateHomeUI(contest) {
 
     title.textContent = contest.monthName;
     
-    if (contest.status === 'voting') {
-        if (state.hasVotedLocally) {
-            badge.textContent = "Votes Submitted";
-            badge.className = "inline-block px-3 py-1 rounded-full bg-green-900/50 text-green-400 text-xs font-bold uppercase tracking-wider mb-3";
-            desc.textContent = "Thanks for voting! View the gallery.";
-        } else {
-            badge.textContent = "Voting Open";
-            badge.className = "inline-block px-3 py-1 rounded-full bg-[#94c120]/20 text-[#94c120] text-xs font-bold uppercase tracking-wider mb-3";
-            desc.textContent = "Tap 'Go to Gallery' to cast your votes.";
-        }
+    if (state.hasVotedLocally) {
+        badge.textContent = "Votes Submitted";
+        badge.className = "inline-block px-3 py-1 rounded-full bg-green-900/50 text-green-400 text-xs font-bold uppercase tracking-wider mb-3";
+        desc.textContent = "Thanks for voting! View the gallery.";
+    } else {
+        badge.textContent = "Voting Open";
+        badge.className = "inline-block px-3 py-1 rounded-full bg-[#94c120]/20 text-[#94c120] text-xs font-bold uppercase tracking-wider mb-3";
+        desc.textContent = "Tap 'Go to Gallery' to cast your votes.";
     }
 }
 
 function renderGallery() {
     const grid = document.getElementById('galleryGrid');
+    if(!grid) return;
     grid.innerHTML = '';
     
     if(!state.activeContest || state.entries.length === 0) {
@@ -239,41 +379,38 @@ function renderGallery() {
         return;
     }
 
-    const isVoting = state.activeContest.status === 'voting';
     const isLocked = state.hasVotedLocally;
-    
-    // STRICT Voting Mode Check
-    const blindMode = isVoting && !isLocked;
-    const list = blindMode ? state.shuffledEntries : state.entries;
+    // Anonymity: Show names ONLY if contest is closed OR it is my photo
+    const showNames = state.activeContest.status === 'closed'; 
+    const list = showNames ? state.entries : state.shuffledEntries; 
 
-    document.getElementById('galleryTitle').textContent = isLocked ? "Gallery (Results Pending)" : "Cast Your Votes";
-    document.getElementById('voteCounter').textContent = isLocked ? "Completed" : `Votes: ${Object.values(state.votes).filter(x=>x).length}/3`;
+    const titleEl = document.getElementById('galleryTitle');
+    const counterEl = document.getElementById('voteCounter');
+    if(titleEl) titleEl.textContent = isLocked ? "Gallery (My Votes)" : "Cast Your Votes";
+    if(counterEl) counterEl.textContent = isLocked ? "Submitted" : `Votes: ${Object.values(state.votes).filter(x=>x).length}/3`;
 
     list.forEach(entry => {
         const isMine = entry.photographer === state.currentUser;
         
-        // Find Rank
         let rank = 0;
         if(state.votes[1] === entry.id) rank = 1;
         if(state.votes[2] === entry.id) rank = 2;
         if(state.votes[3] === entry.id) rank = 3;
 
-        // Styles
         let borderClass = 'border-gray-700';
         let opacityClass = 'opacity-100';
         
         if (rank === 1) borderClass = 'border-yellow-400 ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.4)]';
-        if (rank === 2) borderClass = 'border-gray-300 ring-2 ring-gray-300';
-        if (rank === 3) borderClass = 'border-orange-500 ring-2 ring-orange-500';
-        
-        // If we have 3 votes and this isn't one of them, fade it out slightly
-        const votesCast = Object.values(state.votes).filter(x=>x).length;
-        if (votesCast === 3 && rank === 0 && !isLocked) opacityClass = 'opacity-40 grayscale';
+        else if (rank === 2) borderClass = 'border-gray-300 ring-2 ring-gray-300';
+        else if (rank === 3) borderClass = 'border-orange-500 ring-2 ring-orange-500';
+        else if (isLocked) opacityClass = 'opacity-40 grayscale';
+        else {
+            const votesCast = Object.values(state.votes).filter(x=>x).length;
+            if (votesCast === 3 && rank === 0) opacityClass = 'opacity-40 grayscale';
+        }
 
         const el = document.createElement('div');
         el.className = `bg-gray-800 rounded-xl overflow-hidden border transition-all duration-300 transform ${borderClass} ${opacityClass}`;
-        
-        // Interaction Logic: Lightbox Always Active
         
         el.innerHTML = `
             <div class="relative bg-gray-900 group cursor-pointer" onclick="viewImage('${entry.url}')">
@@ -281,36 +418,45 @@ function renderGallery() {
                 ${isMine ? '<span class="absolute top-2 right-2 bg-[#94c120] text-black text-[10px] font-bold px-2 py-1 rounded">YOU</span>' : ''}
             </div>
             
-            ${ (!blindMode || isMine) ? `<div class="p-2 text-center text-xs font-bold text-gray-400 border-t border-gray-700">${entry.photographer}</div>` : '' }
+            ${ (showNames || isMine) ? `<div class="p-2 text-center text-xs font-bold text-gray-400 border-t border-gray-700">${entry.photographer}</div>` : '' }
 
-            ${ (blindMode && !isMine) ? `
+            ${ (!isMine && !showNames) ? `
                 <div class="p-2 flex gap-1 justify-center bg-gray-800">
-                    <button onclick="castVote(1, '${entry.id}')" class="flex-1 py-2 rounded text-xs font-bold transition ${rank===1 ? 'bg-[#94c120] text-black' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}">1st</button>
-                    <button onclick="castVote(2, '${entry.id}')" class="flex-1 py-2 rounded text-xs font-bold transition ${rank===2 ? 'bg-gray-200 text-black' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}">2nd</button>
-                    <button onclick="castVote(3, '${entry.id}')" class="flex-1 py-2 rounded text-xs font-bold transition ${rank===3 ? 'bg-orange-500 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}">3rd</button>
+                    <button ${isLocked ? 'disabled' : ''} onclick="castVote(1, '${entry.id}')" class="flex-1 py-2 rounded text-xs font-bold transition ${rank===1 ? 'bg-[#94c120] text-black' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}">1st</button>
+                    <button ${isLocked ? 'disabled' : ''} onclick="castVote(2, '${entry.id}')" class="flex-1 py-2 rounded text-xs font-bold transition ${rank===2 ? 'bg-gray-200 text-black' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}">2nd</button>
+                    <button ${isLocked ? 'disabled' : ''} onclick="castVote(3, '${entry.id}')" class="flex-1 py-2 rounded text-xs font-bold transition ${rank===3 ? 'bg-orange-500 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}">3rd</button>
                 </div>
             ` : '' }
         `;
         grid.appendChild(el);
     });
 
-    // Toggle Submit Button
-    const votes = Object.values(state.votes).filter(x=>x).length;
     const btn = document.getElementById('submitBtn');
-    if(votes === 3 && !isLocked) btn.classList.remove('hidden');
-    else btn.classList.add('hidden');
+    if(btn) {
+        if(isLocked) {
+            btn.textContent = "Votes Submitted ✅";
+            btn.disabled = true;
+            btn.classList.remove('hidden', 'bg-[#94c120]', 'hover:bg-[#82a81c]', 'shadow-[0_0_20px_rgba(148,193,32,0.4)]');
+            btn.classList.add('bg-gray-700', 'text-gray-400', 'cursor-default');
+        } else {
+            const votes = Object.values(state.votes).filter(x=>x).length;
+            if(votes === 3) {
+                btn.textContent = "Submit 3 Votes ✅";
+                btn.classList.remove('hidden');
+            } else btn.classList.add('hidden');
+        }
+    }
 }
 
 function castVote(rank, id) {
+    if(state.hasVotedLocally) return;
     if(state.votes[rank] === id) {
-        state.votes[rank] = null; // Toggle off
+        state.votes[rank] = null; 
     } else {
-        // Remove ID from other slots if present
         if(state.votes[1]===id) state.votes[1]=null;
         if(state.votes[2]===id) state.votes[2]=null;
         if(state.votes[3]===id) state.votes[3]=null;
-        
-        state.votes[rank] = id; // Set new
+        state.votes[rank] = id; 
     }
     renderGallery();
 }
@@ -326,18 +472,152 @@ async function submitVotes() {
 
     const userKey = `voted_${state.activeContest.id}_${state.currentUser}`;
     localStorage.setItem(userKey, 'true');
-    state.hasVotedLocally = true;
+    localStorage.setItem(userKey + '_data', JSON.stringify(state.votes));
     
+    state.hasVotedLocally = true;
     navTo('landing');
     alert("Votes Submitted Successfully! 🚀");
 }
 
-// --- 7. LEADERBOARD & ARCHIVES ---
+// --- 8. ADMIN UPDATES ---
+function showAdminPanel() { 
+    document.getElementById('view-admin').classList.remove('hidden');
+    updateStorageDropdown(); 
+}
+
+function renderAdminTeamList() {
+    const list = document.getElementById('adminTeamList');
+    if(!list) return; // Safety
+    list.innerHTML = '';
+    state.teamMembers.sort().forEach(m => {
+        const row = document.createElement('div');
+        row.className = "flex justify-between items-center text-gray-300 border-b border-white/10 pb-1";
+        row.innerHTML = `
+            <span>${m}</span>
+            <button onclick="adminRemoveTeamMember('${m}')" class="text-red-500 hover:text-white px-2">×</button>
+        `;
+        list.appendChild(row);
+    });
+}
+
+async function adminAddTeamMember() {
+    const input = document.getElementById('newMemberName');
+    const name = input.value.trim();
+    if (!name) return;
+    if (state.teamMembers.includes(name)) return alert("Already exists");
+    state.teamMembers.push(name);
+    await db.collection('config').doc('settings').update({ teamMembers: state.teamMembers });
+    input.value = '';
+    renderAdminTeamList();
+    populateLoginDropdown();
+}
+
+async function adminRemoveTeamMember(name) {
+    if (!confirm(`Remove ${name}? They will lose login access.`)) return;
+    state.teamMembers = state.teamMembers.filter(m => m !== name);
+    await db.collection('config').doc('settings').update({ teamMembers: state.teamMembers });
+    renderAdminTeamList();
+    populateLoginDropdown();
+}
+
+function updateStorageDropdown() {
+    const sel = document.getElementById('storagePurgeSelect');
+    if(!sel) return;
+    sel.innerHTML = '<option value="" disabled selected>Select Archive to Purge...</option>';
+    state.archives.forEach(a => {
+        const o = document.createElement('option');
+        o.value = a.id;
+        o.textContent = `${a.monthName} (${a.entries.length} images)`;
+        sel.appendChild(o);
+    });
+}
+
+async function adminPurgeImages() {
+    const id = document.getElementById('storagePurgeSelect').value;
+    if(!id) return;
+    if(!confirm(`WARNING: This will permanently delete all image files for ${id}. Continue?`)) return;
+    try {
+        const archive = state.archives.find(a => a.id === id);
+        if(!archive) return;
+        let deletedCount = 0;
+        for (const entry of archive.entries) {
+            if(entry.url) {
+                try {
+                    const ref = storage.refFromURL(entry.url);
+                    await ref.delete();
+                    deletedCount++;
+                } catch(err) { console.log("Skip", entry.url); }
+            }
+        }
+        alert(`Purged ${deletedCount} images.`);
+    } catch (e) { console.error(e); alert("Error purging."); }
+}
+
+async function adminCreateContest() {
+    const n = document.getElementById('newContestName').value;
+    const i = document.getElementById('newContestId').value;
+    if(!n || !i) return;
+    await db.collection("contests").doc(i).set({ monthName: n, status: "voting" });
+    alert("Created!"); 
+    document.getElementById('view-admin').classList.add('hidden');
+    navTo('landing');
+}
+
+async function deleteArchive(id) {
+    if(!confirm(`Delete history for ${id}?`)) return;
+    await db.collection("contests").doc(id).delete();
+    await db.collection("archives").doc(id).delete();
+    alert("Deleted.");
+}
+
+async function adminCheckVotes() {
+    if (!state.activeContest) return alert("No active contest.");
+    const list = document.getElementById('adminVoteList');
+    if(!list) return;
+    list.classList.remove('hidden');
+    const snap = await db.collection("contests").doc(state.activeContest.id).collection("votes").get();
+    const voters = new Set(snap.docs.map(d => d.id)); 
+    const voted = state.teamMembers.filter(m => voters.has(m));
+    const pending = state.teamMembers.filter(m => !voters.has(m));
+    list.innerHTML = `
+        <div class="text-xs text-gray-400 mb-2">Voted: ${voted.length}/${state.teamMembers.length}</div>
+        <div class="grid grid-cols-2 gap-2 text-xs">
+            ${voted.map(n => `<div class="text-green-400">✅ ${n}</div>`).join('')}
+            ${pending.map(n => `<div class="text-red-400">⏳ ${n}</div>`).join('')}
+        </div>
+    `;
+}
+
+async function adminFinalizeArchive() {
+    if(!state.activeContest || !confirm("Finalize & Close?")) return;
+    const votesSnap = await db.collection("contests").doc(state.activeContest.id).collection("votes").get();
+    const votes = votesSnap.docs.map(d => d.data().votes);
+    let tally = {};
+    state.entries.forEach(e => { tally[e.id] = { points: 0, gold: 0, silver: 0, bronze: 0, id: e.id, ...e }; });
+    votes.forEach(v => {
+        if(v['1'] && tally[v['1']]) { tally[v['1']].points += 3; tally[v['1']].gold++; }
+        if(v['2'] && tally[v['2']]) { tally[v['2']].points += 2; tally[v['2']].silver++; }
+        if(v['3'] && tally[v['3']]) { tally[v['3']].points += 1; tally[v['3']].bronze++; }
+    });
+    const results = Object.values(tally).sort((a,b) => b.points - a.points);
+    if(results.length < 3) return alert("Not enough entries/votes.");
+    
+    await db.collection("archives").doc(state.activeContest.id).set({
+        id: state.activeContest.id,
+        monthName: state.activeContest.monthName,
+        winners: {gold: results[0].id, silver: results[1].id, bronze: results[2].id},
+        entries: results
+    });
+    await db.collection("contests").doc(state.activeContest.id).update({status:'closed'});
+    location.reload();
+}
+
 function renderLeaderboard() {
     // 1. Calculate Historical Points
     const calculateScores = (archivesSubset) => {
         let sc = {};
-        TEAM_MEMBERS.forEach(m => sc[m] = { name: m, points: 0, gold: 0, silver: 0, bronze: 0, entries: 0 });
+        // Use loaded team members if possible, otherwise iterate names found in history
+        state.teamMembers.forEach(m => sc[m] = { name: m, points: 0, gold: 0, silver: 0, bronze: 0, entries: 0 });
         
         archivesSubset.forEach(contest => {
             const findName = (id) => {
@@ -383,6 +663,7 @@ function renderLeaderboard() {
     const sortedCurrent = Object.values(currentScores).sort(sortLogic);
 
     const grid = document.getElementById('leaderboardGrid');
+    if(!grid) return;
     
     // Updated 12-Column Header
     grid.innerHTML = `
@@ -432,28 +713,23 @@ function renderLeaderboard() {
 
         grid.innerHTML += `
             <div class="grid grid-cols-12 gap-2 items-center p-2 md:p-4 border-b border-gray-800/50 hover:bg-white/5 transition group">
-                <!-- Rank (2 cols) -->
                 <div class="col-span-2 flex items-center pl-1 md:pl-2">
                     <div class="w-6 md:w-8 flex justify-center mr-1">${rankDisplay}</div>
                     <div>${trend}</div>
                 </div>
                 
-                <!-- Name (3 cols) -->
                 <div class="col-span-3 font-bold text-white text-xs md:text-sm truncate tracking-tight pl-1">
                     ${p.name}
                 </div>
 
-                <!-- Entries (2 cols) -->
                 <div class="col-span-2 text-center text-gray-400 font-mono text-xs md:text-sm">
                     ${p.entries}
                 </div>
 
-                <!-- Wins (3 cols) -->
                 <div class="col-span-3 font-mono text-[10px] md:text-xs text-gray-500 text-center whitespace-nowrap">
                     ${winsStr}
                 </div>
 
-                <!-- Points (2 cols) -->
                 <div class="col-span-2 font-bold text-[#94c120] text-sm md:text-xl text-right pr-1 md:pr-2">
                     ${p.points}
                 </div>
@@ -462,127 +738,9 @@ function renderLeaderboard() {
     });
 }
 
-function renderArchives() {
-    const grid = document.getElementById('archiveGrid');
-    grid.innerHTML = '';
-    document.getElementById('megaArchive').classList.add('hidden');
-    document.getElementById('archiveDetailView').classList.add('hidden'); // Ensure detail is hidden
-    
-    state.archives.forEach(a => {
-        const winEntry = a.entries.find(e => e.id === a.winners.gold);
-        const thumb = winEntry ? winEntry.url : '';
-        
-        const card = document.createElement('div');
-        card.className = "glass p-4 rounded-xl flex items-center gap-4 cursor-pointer hover:bg-gray-800 transition relative group";
-        
-        // Delete Button for Admins
-        const deleteBtn = state.isAdmin ? 
-            `<button onclick="event.stopPropagation(); deleteArchive('${a.id}')" class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full text-xs hover:bg-red-600 hidden group-hover:block">×</button>` 
-            : '';
-
-        card.onclick = () => openArchiveDetail(a.id); // Pass ID
-        card.innerHTML = `
-            ${deleteBtn}
-            <div class="h-16 w-16 bg-gray-800 rounded-lg bg-cover bg-center" style="background-image: url('${thumb}')"></div>
-            <div>
-                <h3 class="font-bold text-white">${a.monthName}</h3>
-                <p class="text-xs text-gray-400">${a.entries.length} Entries</p>
-            </div>
-        `;
-        grid.appendChild(card);
-    });
-}
-
-function openArchiveDetail(archiveId) {
-    const archive = state.archives.find(a => a.id === archiveId);
-    if(!archive) return;
-
-    document.getElementById('archiveGrid').classList.add('hidden');
-    const detail = document.getElementById('archiveDetailView');
-    detail.classList.remove('hidden');
-    
-    // Find winners
-    const g = archive.entries.find(e=>e.id===archive.winners.gold);
-    const s = archive.entries.find(e=>e.id===archive.winners.silver);
-    const b = archive.entries.find(e=>e.id===archive.winners.bronze);
-    
-    // Filter out winners for the "Rest" grid
-    const winnerIds = [archive.winners.gold, archive.winners.silver, archive.winners.bronze];
-    const rest = archive.entries.filter(e => !winnerIds.includes(e.id));
-
-    detail.innerHTML = `
-        <div class="mb-8 fade-in">
-            <button onclick="closeArchiveDetail()" class="mb-6 px-4 py-2 bg-gray-800 rounded-lg text-sm text-gray-400 hover:text-white flex items-center gap-2 transition">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-                Back to History
-            </button>
-            
-            <h2 class="text-3xl font-bold text-white mb-8 text-center tracking-tight">${archive.monthName} <span class="text-[#94c120]">Winners</span></h2>
-            
-            <!-- PODIUM -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-                <!-- Gold (First on mobile order for impact, center on desktop) -->
-                <div class="order-1 md:order-2">
-                    ${g ? `
-                    <div class="bg-gray-800/50 rounded-2xl overflow-hidden border-2 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.2)]">
-                        <img src="${g.url}" class="w-full h-64 md:h-80 object-cover" onclick="viewImage('${g.url}')">
-                        <div class="p-4 text-center bg-[#151b2b]">
-                            <div class="text-3xl mb-1">🥇</div>
-                            <div class="font-bold text-white text-xl">${g.photographer}</div>
-                            <div class="text-[#94c120] font-mono text-sm">${g.points || '?'} pts</div>
-                        </div>
-                    </div>` : ''}
-                </div>
-
-                <!-- Silver -->
-                <div class="order-2 md:order-1 mt-4 md:mt-12">
-                    ${s ? `
-                    <div class="bg-gray-800/50 rounded-2xl overflow-hidden border border-gray-400">
-                        <img src="${s.url}" class="w-full h-56 md:h-64 object-cover" onclick="viewImage('${s.url}')">
-                        <div class="p-4 text-center bg-[#151b2b]">
-                            <div class="text-2xl mb-1">🥈</div>
-                            <div class="font-bold text-gray-200 text-lg">${s.photographer}</div>
-                            <div class="text-gray-500 font-mono text-sm">${s.points || '?'} pts</div>
-                        </div>
-                    </div>` : ''}
-                </div>
-
-                <!-- Bronze -->
-                <div class="order-3 md:order-3 mt-4 md:mt-12">
-                    ${b ? `
-                    <div class="bg-gray-800/50 rounded-2xl overflow-hidden border border-orange-500">
-                        <img src="${b.url}" class="w-full h-56 md:h-64 object-cover" onclick="viewImage('${b.url}')">
-                        <div class="p-4 text-center bg-[#151b2b]">
-                            <div class="text-2xl mb-1">🥉</div>
-                            <div class="font-bold text-gray-200 text-lg">${b.photographer}</div>
-                            <div class="text-gray-500 font-mono text-sm">${b.points || '?'} pts</div>
-                        </div>
-                    </div>` : ''}
-                </div>
-            </div>
-
-            <!-- THE REST -->
-            <div class="flex items-center gap-4 mb-6">
-                <div class="h-px bg-gray-800 flex-grow"></div>
-                <h3 class="text-gray-500 text-sm font-bold uppercase tracking-widest">Other Entries</h3>
-                <div class="h-px bg-gray-800 flex-grow"></div>
-            </div>
-
-            <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-                ${rest.map(e => `
-                    <div class="bg-gray-800 overflow-hidden cursor-pointer relative group rounded-lg" onclick="viewImage('${e.url}')">
-                        <img src="${e.url}" loading="lazy" class="w-full h-auto object-contain">
-                        <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center flex-col p-2 text-center">
-                            <span class="text-white font-bold text-xs">${e.photographer}</span>
-                            ${e.points ? `<span class="text-[#94c120] text-xs font-mono mt-1">${e.points} pts</span>` : ''}
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-        </div>
-    `;
-    
-    mega.innerHTML = podiumHTML;
+function viewImage(url) {
+    document.getElementById('lightboxImg').src = url;
+    document.getElementById('lightbox').classList.remove('hidden');
 }
 
 function closeArchiveDetail() {
@@ -602,26 +760,18 @@ function closeMegaArchive() {
 }
 
 function filterMega(type) {
-    // Highlight active button
     ['all','winners','mine'].forEach(t => {
         const btn = document.getElementById(`filter-${t}`);
-        if(t === type) {
-            btn.className = "px-4 py-2 bg-[#94c120] text-black rounded-lg text-sm font-bold shadow-[0_0_10px_rgba(148,193,32,0.5)] whitespace-nowrap";
-        } else {
-            btn.className = "px-4 py-2 bg-gray-800 text-gray-400 rounded-lg text-sm font-bold whitespace-nowrap hover:text-white";
-        }
+        if(t === type) btn.className = "px-4 py-2 bg-[#94c120] text-black rounded-lg text-sm font-bold shadow-[0_0_10px_rgba(148,193,32,0.5)] whitespace-nowrap";
+        else btn.className = "px-4 py-2 bg-gray-800 text-gray-400 rounded-lg text-sm font-bold whitespace-nowrap hover:text-white";
     });
-
     const grid = document.getElementById('megaGrid');
     grid.innerHTML = '';
-
     let items = [];
-
     if (type === 'all') {
         state.archives.forEach(a => items.push(...a.entries));
         items.sort(() => Math.random() - 0.5);
-    } 
-    else if (type === 'winners') {
+    } else if (type === 'winners') {
         state.archives.forEach(a => {
             const w = a.winners;
             const gold = a.entries.find(e=>e.id===w.gold);
@@ -631,182 +781,58 @@ function filterMega(type) {
             if(silver) items.push({...silver, rank: 2, month: a.monthName});
             if(bronze) items.push({...bronze, rank: 3, month: a.monthName});
         });
-        // Sort by newest archive first (implicit in archives order)
-    } 
-    else if (type === 'mine') {
-        state.archives.forEach(a => {
-            items.push(...a.entries.filter(e => e.photographer === state.currentUser));
-        });
+    } else if (type === 'mine') {
+        state.archives.forEach(a => items.push(...a.entries.filter(e => e.photographer === state.currentUser)));
     }
-
-    if(items.length === 0) {
-        grid.innerHTML = `<div class="col-span-full text-center text-gray-500 py-8">No images found for this filter.</div>`;
-        return;
-    }
-
+    if(items.length === 0) { grid.innerHTML = `<div class="col-span-full text-center text-gray-500 py-8">No images found.</div>`; return; }
     items.forEach(img => {
-        // For winners, maybe add a border?
         let border = '';
         if(type==='winners') {
             if(img.rank===1) border = 'border-2 border-yellow-400';
             if(img.rank===2) border = 'border-2 border-gray-300';
             if(img.rank===3) border = 'border-2 border-orange-500';
         }
+        grid.innerHTML += `<div class="bg-gray-800 overflow-hidden cursor-pointer ${border}" onclick="viewImage('${img.url}')"><img src="${img.url}" loading="lazy" class="w-full h-auto object-cover hover:opacity-90 transition"></div>`;
+    });
+}
 
-        grid.innerHTML += `
-            <div class="bg-gray-800 overflow-hidden cursor-pointer ${border}" onclick="viewImage('${img.url}')">
-                <img src="${img.url}" loading="lazy" class="w-full h-auto object-cover hover:opacity-90 transition">
+function openArchiveDetail(archiveId) {
+    const archive = state.archives.find(a => a.id === archiveId);
+    if(!archive) return;
+    document.getElementById('archiveGrid').classList.add('hidden');
+    const detail = document.getElementById('archiveDetailView');
+    detail.classList.remove('hidden');
+    
+    const g = archive.entries.find(e=>e.id===archive.winners.gold);
+    const s = archive.entries.find(e=>e.id===archive.winners.silver);
+    const b = archive.entries.find(e=>e.id===archive.winners.bronze);
+    const winnerIds = [archive.winners.gold, archive.winners.silver, archive.winners.bronze];
+    const rest = archive.entries.filter(e => !winnerIds.includes(e.id));
+
+    detail.innerHTML = `
+        <div class="mb-8 fade-in">
+            <button onclick="closeArchiveDetail()" class="mb-6 px-4 py-2 bg-gray-800 rounded-lg text-sm text-gray-400 hover:text-white flex items-center gap-2 transition">Back</button>
+            <h2 class="text-3xl font-bold text-white mb-8 text-center">${archive.monthName} <span class="text-[#94c120]">Winners</span></h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+                <div class="order-1 md:order-2">
+                    ${g ? `<div class="bg-gray-800/50 rounded-2xl overflow-hidden border-2 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.2)]">
+                        <img src="${g.url}" class="w-full h-64 md:h-80 object-cover" onclick="viewImage('${g.url}')">
+                        <div class="p-4 text-center bg-[#151b2b]"><div class="text-3xl mb-1">🥇</div><div class="font-bold text-white text-xl">${g.photographer}</div><div class="text-[#94c120] font-mono text-sm">${g.points || '?'} pts</div></div></div>` : ''}
+                </div>
+                <div class="order-2 md:order-1 mt-4 md:mt-12">
+                    ${s ? `<div class="bg-gray-800/50 rounded-2xl overflow-hidden border border-gray-400">
+                        <img src="${s.url}" class="w-full h-56 md:h-64 object-cover" onclick="viewImage('${s.url}')">
+                        <div class="p-4 text-center bg-[#151b2b]"><div class="text-2xl mb-1">🥈</div><div class="font-bold text-gray-200 text-lg">${s.photographer}</div><div class="text-gray-500 font-mono text-sm">${s.points || '?'} pts</div></div></div>` : ''}
+                </div>
+                <div class="order-3 md:order-3 mt-4 md:mt-12">
+                    ${b ? `<div class="bg-gray-800/50 rounded-2xl overflow-hidden border border-orange-500">
+                        <img src="${b.url}" class="w-full h-56 md:h-64 object-cover" onclick="viewImage('${b.url}')">
+                        <div class="p-4 text-center bg-[#151b2b]"><div class="text-2xl mb-1">🥉</div><div class="font-bold text-gray-200 text-lg">${b.photographer}</div><div class="text-gray-500 font-mono text-sm">${b.points || '?'} pts</div></div></div>` : ''}
+                </div>
             </div>
-        `;
-    });
-}
-
-// --- 8. ADMIN ---
-function showAdminPanel() { document.getElementById('view-admin').classList.remove('hidden'); }
-
-async function adminCreateContest() {
-    const n = document.getElementById('newContestName').value;
-    const i = document.getElementById('newContestId').value;
-    if(!n || !i) return;
-    
-    // Use 'voting' directly as requested
-    await db.collection("contests").doc(i).set({ monthName: n, status: "voting" });
-    alert("Created & Voting Opened!"); 
-    document.getElementById('view-admin').classList.add('hidden');
-    navTo('landing');
-}
-
-async function deleteArchive(id) {
-    if(!confirm(`Delete history for ${id}? This cannot be undone.`)) return;
-    
-    try {
-        await db.collection("contests").doc(id).delete();
-        await db.collection("archives").doc(id).delete();
-        
-        // CLEANUP: LocalStorage & State
-        localStorage.removeItem('voted_' + id + '_' + state.currentUser);
-        
-        if (state.activeContest && state.activeContest.id === id) {
-            state.activeContest = null;
-            state.entries = [];
-            state.votes = {1: null, 2: null, 3: null};
-            state.hasVotedLocally = false;
-            
-            if(entriesUnsubscribe) entriesUnsubscribe();
-            
-            renderGallery();
-            updateHomeUI(null);
-        }
-
-        alert("Deleted.");
-    } catch(e) {
-        console.error(e);
-        alert("Error deleting.");
-    }
-}
-
-async function adminCheckVotes() {
-    if (!state.activeContest) return alert("No active contest to check.");
-
-    const list = document.getElementById('adminVoteList');
-    
-    // Toggle Logic
-    if (!list.classList.contains('hidden')) {
-        list.classList.add('hidden');
-        return;
-    }
-
-    list.classList.remove('hidden');
-    list.innerHTML = '<div class="text-xs text-gray-500 text-center">Loading...</div>';
-
-    const snap = await db.collection("contests").doc(state.activeContest.id).collection("votes").get();
-    const voters = new Set(snap.docs.map(d => d.id)); // ID is username
-
-    const voted = [];
-    const pending = [];
-
-    TEAM_MEMBERS.sort().forEach(m => {
-        if (voters.has(m)) voted.push(m);
-        else pending.push(m);
-    });
-
-    let html = `<div class="text-xs font-bold text-gray-400 mb-2 uppercase tracking-widest text-center">Progress: <span class="text-white">${voted.length}</span> / ${TEAM_MEMBERS.length}</div>`;
-    html += `<div class="grid grid-cols-2 gap-2 text-xs">`;
-
-    voted.forEach(n => {
-        html += `<div class="flex items-center gap-2 text-green-400"><span class="text-sm">✅</span> ${n}</div>`;
-    });
-
-    pending.forEach(n => {
-        html += `<div class="flex items-center gap-2 text-red-400 opacity-60"><span class="text-sm">⏳</span> ${n}</div>`;
-    });
-
-    html += `</div>`;
-    list.innerHTML = html;
-    list.classList.remove('hidden'); // Ensure visible after load
-}
-
-async function adminFinalizeArchive() {
-    if(!state.activeContest || !confirm("Are you sure? This will calculate votes and end the contest.")) return;
-
-    const votesSnap = await db.collection("contests").doc(state.activeContest.id).collection("votes").get();
-    const votes = votesSnap.docs.map(d => d.data().votes);
-
-    // Tally Points
-    let tally = {};
-    state.entries.forEach(e => {
-        tally[e.id] = { points: 0, gold: 0, silver: 0, bronze: 0, id: e.id, ...e }; // Spread existing entry data
-    });
-
-    votes.forEach(v => {
-        if(v['1'] && tally[v['1']]) { 
-            tally[v['1']].points += 3; 
-            tally[v['1']].gold += 1; 
-        }
-        if(v['2'] && tally[v['2']]) { 
-            tally[v['2']].points += 2; 
-            tally[v['2']].silver += 1;
-        }
-        if(v['3'] && tally[v['3']]) { 
-            tally[v['3']].points += 1; 
-            tally[v['3']].bronze += 1;
-        }
-    });
-
-    const results = Object.values(tally).sort((a,b) => {
-        const scoreDiff = b.points - a.points;
-        if (scoreDiff !== 0) return scoreDiff; // 1. Winner has most points
-
-        const goldDiff = b.gold - a.gold;
-        if (goldDiff !== 0) return goldDiff; // 2. Winner has most Golds
-
-        const silverDiff = b.silver - a.silver;
-        return silverDiff; // 3. Winner has most Silvers
-    });
-
-    const gold = results[0] ? results[0].id : null;
-    const silver = results[1] ? results[1].id : null;
-    const bronze = results[2] ? results[2].id : null;
-
-    if(!gold) return alert("No votes cast yet!");
-
-    // Save with calculated points attached to entries!
-    await db.collection("archives").doc(state.activeContest.id).set({
-        id: state.activeContest.id,
-        monthName: state.activeContest.monthName,
-        winners: {gold, silver, bronze},
-        entries: results // Save the sorted results which include points
-    });
-
-    await db.collection("contests").doc(state.activeContest.id).update({status:'closed'});
-
-    alert("Contest Closed! Winners Calculated. 🏆");
-    document.getElementById('view-admin').classList.add('hidden');
-    
-    location.reload(); 
-}
-
-function viewImage(url) {
-    document.getElementById('lightboxImg').src = url;
-    document.getElementById('lightbox').classList.remove('hidden');
+            <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                ${rest.map(e => `<div class="bg-gray-800 overflow-hidden cursor-pointer relative group rounded-lg" onclick="viewImage('${e.url}')"><img src="${e.url}" loading="lazy" class="w-full h-auto object-contain"><div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center flex-col p-2 text-center"><span class="text-white font-bold text-xs">${e.photographer}</span></div></div>`).join('')}
+            </div>
+        </div>
+    `;
 }
