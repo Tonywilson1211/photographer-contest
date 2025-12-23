@@ -104,11 +104,14 @@
             <div id="view-upload" class="view-section hidden">
                 <h2 id="uploadTitle" class="text-xl font-bold text-white mb-4">Enter Next Month</h2>
                 <div class="bg-gray-800/50 p-4 rounded-lg border border-gray-700 mb-6 text-xs text-gray-400 leading-relaxed">
-                    <p class="font-bold text-white mb-2">Instructions:</p>
-                    To enter the upcoming Photo of the Month, tap the link below and upload images directly from your device’s photo library. If your image isn’t already saved on your device, open the download link for the relevant order in Safari, select the LOW RES version of the image, and tap View when prompted. Press and hold the image, then choose Save to Photos. Return to the upload page, select the saved image from your library, and submit your entry. You can upload up to three images per monthly competition.
-                </div>
+                    <p class="font-bold text-white mb-3">Instructions:</p>
+                    <ul class="list-disc list-inside space-y-2">
+                        <li>To enter, tap the link below and upload from your library.</li>
+                        <li>To save images on device via download link: Via Safari, Click 'Low Res', select 'View', tap and hold to 'Save to Photos', then return here to upload.</li>
+                    </ul>
+                </div>  
                 <div id="uploadContainer" class="space-y-4">
-                    <label class="block w-full aspect-video bg-gray-800 border-2 border-dashed border-gray-600 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-[#94c120] transition group">
+                    <label class="block w-full h-40 bg-gray-800 border-2 border-dashed border-gray-600 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-[#94c120] transition group">
                         <div class="text-4xl mb-2 group-hover:scale-110 transition">📤</div>
                         <span class="font-bold text-gray-400 group-hover:text-white">Tap to Select Photo</span>
                         <input type="file" id="fileInput" accept="image/*" class="hidden" onchange="handleFileUpload(this)">

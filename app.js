@@ -280,6 +280,7 @@ async function handleFileUpload(input) {
 
     const targetContest = state.submissionContest;
 
+    // Check current upload count (dynamic check after potential deletions)
     if (state.myUploads.length >= 3) {
         alert("You have already uploaded 3 images for this contest.");
         input.value = "";
@@ -346,13 +347,54 @@ function renderUploadView() {
     if(grid) {
         grid.innerHTML = '';
         state.myUploads.forEach(entry => {
-            grid.innerHTML += `
-                <div class="relative bg-gray-800 rounded-lg overflow-hidden border border-gray-600 aspect-square">
-                    <img src="${entry.url}" class="w-full h-full object-cover opacity-80">
-                    <div class="absolute bottom-0 w-full bg-black/60 p-1 text-center text-[10px] text-green-400 font-bold">EMBEDDED</div>
+            const card = document.createElement('div');
+            card.className = 'relative bg-gray-800 rounded-lg overflow-hidden border border-gray-600 aspect-square group';
+            card.innerHTML = `
+                <img src="${entry.url}" class="w-full h-full object-cover">
+                <button 
+                    onclick="deleteEntry('${entry.id}', '${entry.url}')" 
+                    class="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                    title="Delete entry">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                    </svg>
+                </button>
+                <div class="absolute bottom-0 w-full bg-gradient-to-t from-black/80 to-transparent p-2 text-center">
+                    <span class="text-[10px] text-green-400 font-bold uppercase tracking-wider">Submitted!</span>
                 </div>
             `;
+            grid.appendChild(card);
         });
+    }
+}
+
+// Delete Entry Function (FEATURE SET 3)
+async function deleteEntry(entryId, fileUrl) {
+    if (!confirm("Delete this entry? This cannot be undone.")) return;
+    
+    try {
+        // Delete Firestore document
+        await db.collection("contests")
+            .doc(state.submissionContest.id)
+            .collection("entries")
+            .doc(entryId)
+            .delete();
+        
+        // Attempt to delete Storage file
+        try {
+            const storageRef = storage.refFromURL(fileUrl);
+            await storageRef.delete();
+            console.log("✅ Storage file deleted");
+        } catch (storageError) {
+            console.warn("Storage deletion skipped:", storageError.message);
+        }
+        
+        // The listener will auto-refresh the view
+        console.log("✅ Entry deleted successfully");
+        
+    } catch (error) {
+        console.error("Error deleting entry:", error);
+        alert("Error deleting entry: " + error.message);
     }
 }
 
