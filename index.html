@@ -108,13 +108,14 @@
                     <ul class="list-disc list-inside space-y-2">
                         <li>To enter, tap the link below and upload from your library.</li>
                         <li>To save images on device via download link: Via Safari, Click 'Low Res', select 'View', tap and hold to 'Save to Photos', then return here to upload.</li>
+                        <li>Only jpgs under 1mb may be uploaded.</li>
                     </ul>
                 </div>  
                 <div id="uploadContainer" class="space-y-4">
                     <label class="block w-full h-40 bg-gray-800 border-2 border-dashed border-gray-600 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-[#94c120] transition group">
                         <div class="text-4xl mb-2 group-hover:scale-110 transition">📤</div>
                         <span class="font-bold text-gray-400 group-hover:text-white">Tap to Select Photo</span>
-                        <input type="file" id="fileInput" accept="image/*" class="hidden" onchange="handleFileUpload(this)">
+                        <input type="file" id="fileInput" accept=".jpg, .jpeg, image/jpeg" class="hidden" onchange="handleFileUpload(this)">
                     </label>
                     <p id="uploadStatus" class="text-center text-xs text-gray-500"></p>
                 </div>
@@ -192,57 +193,84 @@
         <img id="lightboxImg" class="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" src="">
     </div>
 
-    <div id="view-admin" class="hidden fixed inset-0 z-[70] bg-black/90 flex items-center justify-center p-4">
-        <div class="bg-gray-800 w-full max-w-lg rounded-2xl border border-gray-700 p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
-            <button onclick="document.getElementById('view-admin').classList.add('hidden')" class="absolute top-4 right-4 text-gray-400 text-2xl">&times;</button>
-            <h2 class="text-2xl font-bold text-white mb-6">Admin Console</h2>
-            
-            <div class="space-y-6">
-                
-                <div class="bg-gray-900 p-4 rounded-xl border border-gray-700">
-                    <h3 class="font-bold text-white text-sm mb-2 uppercase tracking-wide">Manage Team</h3>
-                    <div class="flex gap-2 mb-2">
-                        <input id="newMemberName" placeholder="New Member Name" class="bg-gray-800 text-white p-2 rounded-lg w-full text-sm border border-gray-600">
-                        <button onclick="adminAddTeamMember()" class="bg-green-600 text-white px-4 rounded-lg font-bold">+</button>
-                    </div>
-                    <div id="adminTeamList" class="max-h-32 overflow-y-auto bg-black/30 p-2 rounded text-xs space-y-1">
-                        </div>
-                </div>
+    <div id="view-admin" class="hidden fixed inset-0 z-[70] bg-gray-900 flex flex-col overflow-y-auto pb-20">
+    
+    <div class="sticky top-0 z-50 bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center shadow-lg">
+        <h2 class="text-2xl font-bold text-white flex items-center gap-2">
+            🛡️ Admin Dashboard
+        </h2>
+        <button onclick="document.getElementById('view-admin').classList.add('hidden')" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-bold transition">
+            Close ×
+        </button>
+    </div>
 
-                <div class="bg-gray-900 p-4 rounded-xl border border-gray-700">
-                    <label class="text-xs text-gray-400 uppercase font-bold">Manual Contest Creation</label>
-                    <div class="flex gap-2 mt-2">
-                        <input id="newContestName" placeholder="Name (e.g. March)" class="bg-gray-800 text-white p-3 rounded-lg w-1/2 outline-none">
-                        <input id="newContestId" placeholder="ID (2026-03)" class="bg-gray-800 text-white p-3 rounded-lg w-1/2 outline-none">
-                    </div>
-                    <button onclick="adminCreateContest()" class="w-full mt-2 bg-[#94c120] hover:bg-[#82a81c] text-black font-bold py-3 rounded-lg">Create Contest</button>
-                </div>
+    <div class="p-4 md:p-8 max-w-6xl mx-auto w-full space-y-8">
 
-                <div class="p-4 bg-gray-900 rounded-xl border border-gray-700">
-                    <h3 class="font-bold text-white mb-2">Voting Control</h3>
-                    <button onclick="adminCheckVotes()" class="w-full mb-4 bg-blue-900/30 text-blue-400 border border-blue-500/30 py-3 rounded-lg font-bold hover:bg-blue-900/50 transition">
-                        📊 Check Voting Status
-                    </button>
-                    <div id="adminVoteList" class="hidden mb-4 bg-black/40 p-4 rounded-lg border border-gray-700 max-h-48 overflow-y-auto"></div>
-                    <button id="btnEndContest" onclick="adminFinalizeArchive()" class="w-full bg-[#94c120]/20 text-[#94c120] border border-[#94c120] py-4 rounded-xl font-bold hover:bg-[#94c120] hover:text-black transition disabled:opacity-50 disabled:cursor-not-allowed">
-                        🏁 Tally Votes & Close
-                    </button>
+        <div class="bg-gray-800 rounded-2xl border border-gray-700 overflow-hidden shadow-xl">
+            <div class="p-6 border-b border-gray-700 flex justify-between items-center bg-gray-800/50">
+                <div>
+                    <h3 class="text-xl font-bold text-white">📡 Live Upload Monitor</h3>
+                    <p class="text-gray-400 text-xs mt-1">Tracking participation for the upcoming month.</p>
                 </div>
-
-                <div class="bg-red-900/10 p-4 rounded-xl border border-red-900/30">
-                    <h3 class="font-bold text-red-400 text-sm mb-2 uppercase tracking-wide">Storage Management</h3>
-                    <p class="text-xs text-gray-400 mb-2">Delete photo files to save space/cost. Data remains in history.</p>
-                    <select id="storagePurgeSelect" class="w-full bg-gray-900 text-white p-2 rounded mb-2 border border-gray-700 text-sm">
-                        <option value="" disabled selected>Select Archive to Purge...</option>
-                    </select>
-                    <button onclick="adminPurgeImages()" class="w-full bg-red-600/20 text-red-400 border border-red-500 py-2 rounded-lg font-bold hover:bg-red-600 hover:text-white transition">
-                        🗑️ Purge Photos
-                    </button>
-                </div>
-
+                <button onclick="refreshAdminUploads()" class="bg-[#94c120]/10 text-[#94c120] border border-[#94c120] px-4 py-2 rounded-lg text-sm font-bold hover:bg-[#94c120] hover:text-black transition flex items-center gap-2">
+                    🔄 Refresh
+                </button>
+            </div>
+            <div id="adminUploadsGrid" class="p-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div class="col-span-full text-center py-8 text-gray-500">Click 'Refresh' to scan uploads...</div>
             </div>
         </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <div class="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                <h3 class="font-bold text-white mb-4 flex items-center gap-2">📅 Manual Contest Creation</h3>
+                <div class="flex gap-2 mb-4">
+                    <input id="newContestName" placeholder="Name (e.g. April 2025)" class="bg-gray-900 text-white p-3 rounded-lg w-1/2 border border-gray-600 outline-none focus:border-[#94c120]">
+                    <input id="newContestId" placeholder="ID (2025-04)" class="bg-gray-900 text-white p-3 rounded-lg w-1/2 border border-gray-600 outline-none focus:border-[#94c120]">
+                </div>
+                <button onclick="adminCreateContest()" class="w-full bg-gray-700 hover:bg-white hover:text-black text-white font-bold py-3 rounded-xl transition">
+                    Create New Contest
+                </button>
+            </div>
+
+            <div class="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                <h3 class="font-bold text-white mb-4 flex items-center gap-2">📊 Voting & Archive</h3>
+                <button onclick="adminCheckVotes()" class="w-full mb-3 bg-blue-900/30 text-blue-400 border border-blue-500/30 py-3 rounded-xl font-bold hover:bg-blue-900/50 transition">
+                    Check Current Votes
+                </button>
+                <div id="adminVoteList" class="hidden mb-3 bg-black/40 p-3 rounded-lg text-xs max-h-32 overflow-y-auto border border-gray-600"></div>
+                
+                <button id="btnEndContest" onclick="adminFinalizeArchive()" class="w-full bg-red-900/20 text-red-400 border border-red-500/30 py-3 rounded-xl font-bold hover:bg-red-900/40 transition">
+                    🏁 End Contest & Archive
+                </button>
+            </div>
+        </div>
+
+        <div class="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+            <h3 class="font-bold text-white mb-4">👥 Manage Team List</h3>
+            <div class="flex gap-2 mb-4">
+                <input id="newMemberName" placeholder="New Member Name" class="bg-gray-900 text-white p-3 rounded-lg w-full border border-gray-600 outline-none">
+                <button onclick="adminAddTeamMember()" class="bg-green-600 hover:bg-green-500 text-white px-6 rounded-lg font-bold text-xl">+</button>
+            </div>
+            <div id="adminTeamList" class="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-48 overflow-y-auto">
+                </div>
+        </div>
+
+        <div class="bg-red-900/10 p-6 rounded-2xl border border-red-900/30">
+            <h3 class="font-bold text-red-400 mb-2">🗑️ Storage Purge</h3>
+            <div class="flex gap-2">
+                <select id="storagePurgeSelect" class="bg-gray-900 text-white p-3 rounded-lg w-full border border-gray-700 outline-none">
+                    <option value="" disabled selected>Select Archive...</option>
+                </select>
+                <button onclick="adminPurgeImages()" class="bg-red-600/20 text-red-400 border border-red-500 px-6 rounded-lg font-bold hover:bg-red-600 hover:text-white transition whitespace-nowrap">
+                    Purge
+                </button>
+            </div>
+        </div>
+
     </div>
+</div>
 
     <script src="app.js"></script>
 </body>

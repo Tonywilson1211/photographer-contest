@@ -278,50 +278,89 @@ async function handleFileUpload(input) {
     const file = input.files[0];
     if (!file) return;
 
-    const targetContest = state.submissionContest;
+    // 1. Validate File Type (JPG only)
+    // We check both MIME type and extension to be safe
+    const validTypes = ['image/jpeg', 'image/jpg'];
+    if (!validTypes.includes(file.type)) {
+        alert("Invalid file format. Please upload a JPG or JPEG image.");
+        input.value = ""; // Clear the input
+        return;
+    }
 
-    // Check current upload count (dynamic check after potential deletions)
-    if (state.myUploads.length >= 3) {
-        alert("You have already uploaded 3 images for this contest.");
+    // 2. Validate File Size (Max 1MB)
+    const fileSizeMB = file.size / 1024 / 1024;
+    if (fileSizeMB > 1) {
+        alert(`File is too large (${fileSizeMB.toFixed(2)}MB).\nPlease ensure it is under 1MB.`);
         input.value = "";
         return;
     }
 
-    const status = document.getElementById('uploadStatus');
-    if(status) status.textContent = "Uploading... please wait.";
+    // 3. Validate Context (Is contest active?)
+    const targetContest = state.submissionContest;
+    if (!targetContest) return alert("No submission contest active.");
     
+    // 4. Validate Limit (Max 3)
+    if (state.myUploads.length >= 3) {
+        input.value = "";
+        return alert("Maximum of 3 entries reached. Delete one to upload new.");
+    }
+
+    // 5. Validate Metadata (Order # and Photo #)
+    const orderNum = document.getElementById('inputOrderNum').value.trim();
+    const photoNum = document.getElementById('inputPhotoNum').value.trim();
+
+    if (!orderNum || !photoNum) {
+        input.value = "";
+        return alert("Please enter both Order Number and Photo Number.");
+    }
+
+    // --- PROCEED WITH UPLOAD ---
+    const status = document.getElementById('uploadStatus');
+    status.textContent = "Uploading JPG... please wait.";
+    status.className = "text-center text-xs text-[#94c120] font-bold h-4";
+
     try {
+        // Ensure contest doc exists
         const contestRef = db.collection("contests").doc(targetContest.id);
         const docSnap = await contestRef.get();
         if (!docSnap.exists) {
             await contestRef.set({
                 monthName: targetContest.monthName,
-                status: 'submissions_open'
+                status: 'submissions_open',
+                area: 'area2'
             });
         }
 
+        // Upload to Storage
         const storageRef = storage.ref(`contest_photos/${targetContest.id}/${state.currentUser}/${file.name}`);
         const snapshot = await storageRef.put(file);
         const downloadUrl = await snapshot.ref.getDownloadURL();
 
+        // Create DB Entry
         const entryId = `${state.currentUser}-${Date.now()}`.replace(/[^a-zA-Z0-9]/g, "_");
         
         await contestRef.collection("entries").doc(entryId).set({
             id: entryId,
             photographer: state.currentUser,
             url: downloadUrl,
+            orderNum: orderNum,
+            photoNum: photoNum,
+            fileType: 'jpg', // Tagging it for future reference
             uploadedAt: firebase.firestore.FieldValue.serverTimestamp(),
             votes: 0
         });
 
-        if(status) {
-            status.textContent = "Upload Complete! ✅";
-            setTimeout(() => status.textContent = "", 3000);
-        }
+        status.textContent = "Success! JPG Entered. ✅";
+        setTimeout(() => status.textContent = "", 3000);
+
+        // Clear inputs
+        document.getElementById('inputOrderNum').value = '';
+        document.getElementById('inputPhotoNum').value = '';
 
     } catch (error) {
         console.error("Upload failed", error);
-        if(status) status.textContent = "Error uploading. Try again.";
+        status.textContent = "Error: " + error.message;
+        status.className = "text-center text-xs text-red-500 font-bold h-4";
     }
     input.value = "";
 }
@@ -570,22 +609,26 @@ async function submitVotes() {
 
 // --- 8. ADMIN UPDATES ---
 function showAdminPanel() { 
-    document.getElementById('view-admin').classList.remove('hidden');
-    updateStorageDropdown(); 
+    const view = document.getElementById('view-admin');
+    view.classList.remove('hidden');
+    
+    // Load data immediately
+    renderAdminTeamList();
+    if(typeof updateStorageDropdown === 'function') updateStorageDropdown();
 }
-
 function renderAdminTeamList() {
     const list = document.getElementById('adminTeamList');
-    if(!list) return; // Safety
+    if(!list) return;
+    
     list.innerHTML = '';
     state.teamMembers.sort().forEach(m => {
-        const row = document.createElement('div');
-        row.className = "flex justify-between items-center text-gray-300 border-b border-white/10 pb-1";
-        row.innerHTML = `
-            <span>${m}</span>
-            <button onclick="adminRemoveTeamMember('${m}')" class="text-red-500 hover:text-white px-2">×</button>
+        const div = document.createElement('div');
+        div.className = "bg-gray-900 border border-gray-700 rounded p-2 flex justify-between items-center group hover:border-red-500/50 transition";
+        div.innerHTML = `
+            <span class="text-xs text-gray-300 font-bold truncate">${m}</span>
+            <button onclick="adminRemoveTeamMember('${m}')" class="text-gray-600 hover:text-red-500 font-bold px-2">×</button>
         `;
-        list.appendChild(row);
+        list.appendChild(div);
     });
 }
 
@@ -891,4 +934,79 @@ function openArchiveDetail(archiveId) {
             </div>
         </div>
     `;
+}
+
+// --- UPDATE 10: LIVE UPLOAD MONITOR LOGIC ---
+async function refreshAdminUploads() {
+    const grid = document.getElementById('adminUploadsGrid');
+    if(!grid) return;
+
+    grid.innerHTML = '<div class="col-span-full text-center py-8 text-[#94c120] animate-pulse">Scanning Database...</div>';
+
+    // 1. Determine which contest to check (Active Submission or Next Virtual)
+    let targetId = state.nextMonthId;
+    let targetName = state.nextMonthName;
+    
+    if (state.submissionContest && state.submissionContest.status === 'submissions_open') {
+        targetId = state.submissionContest.id;
+        targetName = state.submissionContest.monthName;
+    }
+
+    try {
+        // 2. Fetch all entries for that month
+        // We use 'contests' collection -> doc(targetId) -> 'entries' subcollection
+        const snapshot = await db.collection("contests").doc(targetId).collection("entries").get();
+        const entries = snapshot.docs.map(d => d.data());
+
+        // 3. Tally counts per photographer
+        const tally = {};
+        // Initialize 0 for everyone in the team
+        state.teamMembers.forEach(member => tally[member] = 0);
+        // Add actual counts
+        entries.forEach(e => {
+            if (tally[e.photographer] !== undefined) {
+                tally[e.photographer]++;
+            } else {
+                // If a user uploaded but isn't in the team list (edge case), add them
+                tally[e.photographer] = 1;
+            }
+        });
+
+        // 4. Render Grid
+        grid.innerHTML = '';
+        
+        // Sort: Completed (3) first, then In Progress, then 0
+        const sortedNames = Object.keys(tally).sort((a,b) => tally[b] - tally[a]);
+
+        sortedNames.forEach(name => {
+            const count = tally[name];
+            let statusClass = "border-gray-700 opacity-50"; // Default (0 uploads)
+            let statusIcon = "⚪";
+            
+            if (count === 3) {
+                statusClass = "border-green-500 bg-green-900/20 shadow-[0_0_10px_rgba(34,197,94,0.2)]";
+                statusIcon = "✅";
+            } else if (count > 0) {
+                statusClass = "border-yellow-500 bg-yellow-900/10";
+                statusIcon = "⏳";
+            }
+
+            grid.innerHTML += `
+                <div class="bg-gray-900 rounded-xl border ${statusClass} p-3 transition flex items-center justify-between">
+                    <div>
+                        <div class="font-bold text-gray-200 text-sm truncate w-32">${name}</div>
+                        <div class="text-[10px] text-gray-500 uppercase tracking-wider">Entries</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xl font-mono font-bold text-white">${count}<span class="text-gray-600 text-sm">/3</span></div>
+                        <div class="text-xs">${statusIcon}</div>
+                    </div>
+                </div>
+            `;
+        });
+
+    } catch (e) {
+        console.error(e);
+        grid.innerHTML = `<div class="col-span-full text-center text-red-500">Error scanning uploads: ${e.message}</div>`;
+    }
 }
