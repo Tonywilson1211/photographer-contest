@@ -1,3 +1,13 @@
+function getFormattedDeadline() {
+    const now = new Date();
+    // Get the last second of the current month
+    const deadline = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    
+    // Format: "31st January at 11:59 PM"
+    const options = { weekday: 'short', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit', hour12: true };
+    return deadline.toLocaleString('en-GB', options);
+}
+
 // --- 1. FIREBASE SETUP ---
 const firebaseConfig = {
   apiKey: "AIzaSyBIvsnCd2apt1rNQAY1FESN_enD_UOte6w",
@@ -46,6 +56,9 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log("🚀 App Initializing...");
     calculateNextMonth();
     initTeam();
+    
+    // Disable context menu for content protection
+    document.addEventListener('contextmenu', event => event.preventDefault());
 });
 
 function calculateNextMonth() {
@@ -369,6 +382,12 @@ function renderUploadView() {
     const view = document.getElementById('view-upload');
     if(!view || view.classList.contains('hidden')) return;
 
+    // 1. Update the Deadline Text (NEW)
+    const deadlineText = document.getElementById('uploadDeadline');
+    if (deadlineText) {
+        deadlineText.textContent = `Entries Close: ${getFormattedDeadline()}`;
+    }
+
     const title = document.getElementById('uploadTitle');
     const container = document.getElementById('uploadContainer');
     const grid = document.getElementById('uploadGrid');
@@ -387,9 +406,14 @@ function renderUploadView() {
         grid.innerHTML = '';
         state.myUploads.forEach(entry => {
             const card = document.createElement('div');
-            card.className = 'relative bg-gray-800 rounded-lg overflow-hidden border border-gray-600 aspect-square group';
+            card.className = 'relative bg-gray-800 rounded-lg overflow-hidden border border-gray-600 aspect-square group protect-content';
             card.innerHTML = `
-                <img src="${entry.url}" class="w-full h-full object-cover">
+                <img src="${entry.url}" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition">
+                
+                <div class="absolute top-0 left-0 bg-black/60 p-1 text-[8px] text-white">
+                    #${entry.orderNum || '?'}/${entry.photoNum || '?'}
+                </div>
+
                 <button 
                     onclick="deleteEntry('${entry.id}', '${entry.url}')" 
                     class="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
@@ -398,8 +422,8 @@ function renderUploadView() {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                     </svg>
                 </button>
-                <div class="absolute bottom-0 w-full bg-gradient-to-t from-black/80 to-transparent p-2 text-center">
-                    <span class="text-[10px] text-green-400 font-bold uppercase tracking-wider">Submitted!</span>
+                <div class="absolute bottom-0 w-full bg-[#94c120] p-1 text-center text-[10px] text-black font-bold tracking-wider">
+                    Submitted!
                 </div>
             `;
             grid.appendChild(card);
@@ -443,6 +467,12 @@ function updateHomeUI(contest) {
     const badge = document.getElementById('homeStatusBadge');
     const desc = document.getElementById('homeMainDesc');
     const endBtn = document.getElementById('btnEndContest');
+    const deadlineText = document.getElementById('homeDeadline'); // NEW
+
+    // --- NEW: Deadline Text Update ---
+    if (deadlineText) {
+         deadlineText.textContent = `⏳ Voting Closes: ${getFormattedDeadline()}`;
+    }
 
     if(!title) return;
 
@@ -474,6 +504,12 @@ function updateHomeUI(contest) {
 }
 
 function renderGallery() {
+    // --- NEW: Update Header Deadline ---
+    const deadlineText = document.getElementById('galleryDeadline');
+    if (deadlineText) {
+        deadlineText.textContent = `Voting ends: ${getFormattedDeadline()}`;
+    }
+    
     const grid = document.getElementById('galleryGrid');
     if(!grid) return;
     grid.innerHTML = '';
@@ -518,7 +554,7 @@ function renderGallery() {
         }
 
         const el = document.createElement('div');
-        el.className = `bg-gray-800 rounded-xl overflow-hidden border transition-all duration-300 transform ${borderClass} ${opacityClass}`;
+        el.className = `bg-gray-800 rounded-xl overflow-hidden border transition-all duration-300 transform ${borderClass} ${opacityClass} protect-content`;
         
         // FOOTER LOGIC
         let footerContent = '';
@@ -903,7 +939,7 @@ function filterMega(type) {
             if(img.rank===2) border = 'border-2 border-gray-300';
             if(img.rank===3) border = 'border-2 border-orange-500';
         }
-        grid.innerHTML += `<div class="bg-gray-800 overflow-hidden cursor-pointer ${border}" onclick="viewImage('${img.url}')"><img src="${img.url}" loading="lazy" class="w-full h-auto object-cover hover:opacity-90 transition"></div>`;
+        grid.innerHTML += `<div class="bg-gray-800 overflow-hidden cursor-pointer ${border} protect-content" onclick="viewImage('${img.url}')"><img src="${img.url}" loading="lazy" class="w-full h-auto object-cover hover:opacity-90 transition"></div>`;
     });
 }
 
@@ -925,12 +961,12 @@ function openArchiveDetail(archiveId) {
             <button onclick="closeArchiveDetail()" class="mb-6 px-4 py-2 bg-gray-800 rounded-lg text-sm text-gray-400 hover:text-white flex items-center gap-2 transition">Back</button>
             <h2 class="text-3xl font-bold text-white mb-8 text-center">${archive.monthName} <span class="text-[#94c120]">Winners</span></h2>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-                <div class="order-1 md:order-2">${g ? `<div class="bg-gray-800/50 rounded-2xl overflow-hidden border-2 border-yellow-400"><img src="${g.url}" class="w-full h-64 object-cover" onclick="viewImage('${g.url}')"><div class="p-4 text-center">🥇 ${g.photographer}</div></div>` : ''}</div>
-                <div class="order-2 md:order-1 mt-4 md:mt-12">${s ? `<div class="bg-gray-800/50 rounded-2xl overflow-hidden border border-gray-400"><img src="${s.url}" class="w-full h-56 object-cover" onclick="viewImage('${s.url}')"><div class="p-4 text-center">🥈 ${s.photographer}</div></div>` : ''}</div>
-                <div class="order-3 md:order-3 mt-4 md:mt-12">${b ? `<div class="bg-gray-800/50 rounded-2xl overflow-hidden border border-orange-500"><img src="${b.url}" class="w-full h-56 object-cover" onclick="viewImage('${b.url}')"><div class="p-4 text-center">🥉 ${b.photographer}</div></div>` : ''}</div>
+                <div class="order-1 md:order-2">${g ? `<div class="bg-gray-800/50 rounded-2xl overflow-hidden border-2 border-yellow-400"><img src="${g.url}" class="w-full h-64 object-cover protect-content" onclick="viewImage('${g.url}')"><div class="p-4 text-center">🥇 ${g.photographer}</div></div>` : ''}</div>
+                <div class="order-2 md:order-1 mt-4 md:mt-12">${s ? `<div class="bg-gray-800/50 rounded-2xl overflow-hidden border border-gray-400"><img src="${s.url}" class="w-full h-56 object-cover protect-content" onclick="viewImage('${s.url}')"><div class="p-4 text-center">🥈 ${s.photographer}</div></div>` : ''}</div>
+                <div class="order-3 md:order-3 mt-4 md:mt-12">${b ? `<div class="bg-gray-800/50 rounded-2xl overflow-hidden border border-orange-500"><img src="${b.url}" class="w-full h-56 object-cover protect-content" onclick="viewImage('${b.url}')"><div class="p-4 text-center">🥉 ${b.photographer}</div></div>` : ''}</div>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-                ${rest.map(e => `<div class="bg-gray-800 overflow-hidden rounded-lg" onclick="viewImage('${e.url}')"><img src="${e.url}" loading="lazy" class="w-full h-auto object-contain"></div>`).join('')}
+                ${rest.map(e => `<div class="bg-gray-800 overflow-hidden rounded-lg protect-content" onclick="viewImage('${e.url}')"><img src="${e.url}" loading="lazy" class="w-full h-auto object-contain"></div>`).join('')}
             </div>
         </div>
     `;
