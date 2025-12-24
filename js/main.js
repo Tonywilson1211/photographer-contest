@@ -1,25 +1,50 @@
+// Firebase Configuration and Initialization
+// Note: Using Firebase v9 compat mode for easier migration
+
+const firebaseConfig = {
+    apiKey: "AIzaSyBIvsnCd2apt1rNQAY1FESN_enD_UOte6w",
+    authDomain: "photographer-contest.firebaseapp.com",
+    projectId: "photographer-contest",
+    storageBucket: "photographer-contest.firebasestorage.app",
+    messagingSenderId: "147304996816",
+    appId: "1:147304996816:web:f41d39a37485afa010a3d5"
+};
+
+// Initialize Firebase (compat mode)
+if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+}
+
+// Export Firebase services
+export const db = firebase.firestore();
+export const auth = firebase.auth();
+export const storage = firebase.storage();
+
 // Main Entry Point - Event Listener Attachments
 
-import { initTeam, checkPinRequirement, attemptLogin } from './auth.js';
+// IMPORTS: These pull logic from your OTHER files. 
+// The bug was that the code for these files was ALSO pasted below, causing a crash.
+import { initAuth, attemptLogin, populateUserSearch } from './auth.js';
 import { calculateNextMonth } from './utils.js';
 import { navTo, viewImage, renderArchives, loadMegaArchive, filterMega, openArchiveDetail, closeArchiveDetail } from './ui.js';
 import { handleFileUpload, castVote, submitVotes, deleteEntry } from './contest.js';
 import { 
-    showAdminPanel, 
+    showAdminPanel,
+    showAdminTab,
     refreshAdminUploads, 
     adminCreateContest, 
     adminCheckVotes, 
-    adminFinalizeArchive, 
-    adminAddTeamMember,
-    adminRemoveTeamMember,
+    adminFinalizeArchive,
     adminPurgeImages 
 } from './admin.js';
 
 // Initialize app on DOM load
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("🚀 App Initializing...");
-    calculateNextMonth();
-    initTeam();
+    console.log("🚀 App Initializing v3.0...");
+    
+    // Ensure these functions exist in utils.js and auth.js
+    calculateNextMonth(); 
+    initAuth();
     
     // Attach all event listeners
     attachLoginListeners();
@@ -40,11 +65,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // === LOGIN SCREEN ===
 function attachLoginListeners() {
-    const loginName = document.getElementById('loginName');
+    const loginNameSearch = document.getElementById('loginNameSearch');
     const loginBtn = document.querySelector('#loginScreen button');
     
-    if (loginName) {
-        loginName.addEventListener('change', checkPinRequirement);
+    // Filter the list as the user types
+    if (loginNameSearch) {
+        loginNameSearch.addEventListener('input', (e) => {
+            populateUserSearch(e.target.value);
+        });
     }
     
     if (loginBtn) {
@@ -250,10 +278,22 @@ function attachAdminListeners() {
         });
     }
     
+    // Tab switching
+    const tabButtons = adminPanel.querySelectorAll('.admin-tab-btn');
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabId = btn.id.replace('admin-tab-', '');
+            showAdminTab(tabId);
+        });
+    });
+    
     // Event delegation for all admin buttons
     adminPanel.addEventListener('click', (e) => {
         const btn = e.target.closest('button');
         if (!btn) return;
+        
+        // Skip if it's a tab button (already handled above)
+        if (btn.classList.contains('admin-tab-btn')) return;
         
         // Refresh uploads
         if (btn.textContent.includes('Refresh')) {
@@ -279,19 +319,6 @@ function attachAdminListeners() {
             return;
         }
         
-        // Add team member
-        if (btn.textContent === '+') {
-            adminAddTeamMember();
-            return;
-        }
-        
-        // Remove team member
-        const removeMember = btn.dataset.removeMember;
-        if (removeMember) {
-            adminRemoveTeamMember(removeMember);
-            return;
-        }
-        
         // Purge images
         if (btn.textContent.includes('Purge')) {
             adminPurgeImages();
@@ -309,3 +336,8 @@ function attachLightboxListeners() {
         });
     }
 }
+
+// Make helper functions available globally for inline onclicks if necessary
+import { selectContest } from './contest.js';
+window.selectContest = selectContest;
+window.navTo = navTo;

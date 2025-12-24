@@ -76,8 +76,18 @@ export function renderGallery() {
         deadlineText.textContent = `Voting ends: ${getFormattedDeadline()}`;
     }
     
+    // Render contest selector if multiple contests
+    renderContestSelector();
+    
     const grid = document.getElementById('galleryGrid');
     if(!grid) return;
+    
+    // Check if contest is skipped
+    if (state.activeContest && state.activeContest.status === 'skipped') {
+        renderSkippedView();
+        return;
+    }
+    
     grid.innerHTML = '';
     
     if(!state.activeContest || state.entries.length === 0) {
@@ -228,14 +238,38 @@ export function renderLeaderboard() {
     const grid = document.getElementById('leaderboardGrid');
     if(!grid) return;
 
-    let sc = {};
-    const roster = state.teamMembers.length > 0 ? state.teamMembers : DEFAULT_TEAM;
+    // TASK 3: Team Isolation - Filter users by team
+    const userTeamId = state.currentUser?.teamId;
+    const isSuperAdmin = state.currentUser?.role === 'super_admin';
     
-    roster.forEach(m => {
-        sc[m] = { name: m, points: 0, gold: 0, silver: 0, bronze: 0, entries: 0 };
+    // Get team members (filtered by team unless super admin)
+    let teamUsers;
+    if (isSuperAdmin) {
+        // Super admins see everyone
+        teamUsers = state.allUsers.length > 0 ? state.allUsers : DEFAULT_TEAM.map(name => ({ displayName: name }));
+    } else if (userTeamId && state.allUsers.length > 0) {
+        // Regular users: filter by their team
+        teamUsers = state.allUsers.filter(u => u.teamId === userTeamId);
+    } else {
+        // Fallback to default team
+        teamUsers = DEFAULT_TEAM.map(name => ({ displayName: name }));
+    }
+    
+    let sc = {};
+    teamUsers.forEach(user => {
+        const name = user.displayName || user;
+        sc[name] = { name: name, points: 0, gold: 0, silver: 0, bronze: 0, entries: 0 };
     });
 
-    state.archives.forEach(contest => {
+    // TASK 3: Filter archives by team
+    const relevantArchives = state.archives.filter(contest => {
+        if (isSuperAdmin) return true; // Super admin sees all
+        if (!userTeamId) return true; // Fallback: show all if no team set
+        // Show if contest belongs to user's team OR is a global monthly contest
+        return contest.teamId === userTeamId || !contest.teamId || contest.type === 'monthly';
+    });
+
+    relevantArchives.forEach(contest => {
         const findName = (id) => { 
             const e = contest.entries.find(x => x.id === id); 
             return e ? e.photographer : null; 
@@ -408,3 +442,160 @@ export function filterMega(type) {
         grid.appendChild(div);
     });
 }
+
+// ==================== PHASE 4: MULTI-CONTEST SUPPORT ====================
+
+/**
+ * Render contest selector (only if multiple contests available)
+ */
+export function renderContestSelector() {
+    let selector = document.getElementById('contestSelector');
+    
+    // Create selector if it doesn't exist
+    if (!selector) {
+        const galleryView = document.getElementById('view-gallery');
+        if (!galleryView) return;
+        
+        selector = document.createElement('div');
+        selector.id = 'contestSelector';
+        selector.className = 'mb-4';
+        galleryView.insertBefore(selector, galleryView.firstChild);
+    }
+    
+    // Hide if only one or zero contests
+    if (state.availableContests.length <= 1) {
+        selector.classList.add('hidden');
+        return;
+    }
+    
+    // Show selector with tabs
+    selector.classList.remove('hidden');
+    
+    const tabs = state.availableContests.map(contest => {
+        const isActive = state.activeContest && state.activeContest.id === contest.id;
+        const activeClasses = isActive 
+            ? 'bg-[#94c120] text-black shadow-[0_0_10px_rgba(148,193,32,0.3)]'
+            : 'bg-gray-800 text-gray-400 hover:bg-gray-700';
+        
+        // Status icon
+        let statusIcon = '';
+        if (contest.status === 'voting') statusIcon = '🗳️';
+        else if (contest.status === 'submissions_open') statusIcon = '📤';
+        else if (contest.status === 'skipped') statusIcon = '⏸️';
+        
+        return `
+            <button 
+                class="contest-tab px-4 py-2 rounded-lg font-bold text-sm transition whitespace-nowrap ${activeClasses}"
+                data-contest-id="${contest.id}"
+            >
+                ${statusIcon} ${contest.monthName}
+            </button>
+        `;
+    }).join('');
+    
+    selector.innerHTML = `
+        <div class="bg-gray-800/50 p-3 rounded-xl border border-gray-700">
+            <div class="text-xs text-gray-500 uppercase mb-2 text-center">Select Contest:</div>
+            <div class="flex gap-2 overflow-x-auto pb-2">
+                ${tabs}
+            </div>
+        </div>
+    `;
+    
+    // Add event listeners to tabs
+    selector.querySelectorAll('.contest-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            const contestId = tab.dataset.contestId;
+            const { selectContest } = require('./contest.js');
+            selectContest(contestId);
+        });
+    });
+}
+
+/**
+ * Render skipped contest view
+ */
+export function renderSkippedView() {
+    const grid = document.getElementById('galleryGrid');
+    if (!grid) return;
+    
+    const contestName = state.activeContest ? state.activeContest.monthName : 'This Month';
+    
+    grid.innerHTML = `
+        <div class="col-span-full text-center py-16 fade-in">
+            <div class="text-6xl md:text-8xl mb-6 animate-pulse">🏖️</div>
+            <h2 class="text-2xl md:text-3xl font-bold text-white mb-3">
+                No Competition This Month
+            </h2>
+            <p class="text-gray-400 mb-2">
+                ${contestName} has been skipped.
+            </p>
+            <p class="text-gray-500 text-sm mb-8">
+                The team is taking a break! Check back next month.
+            </p>
+            <div class="flex gap-4 justify-center">
+                <button 
+                    onclick="navTo('archives')" 
+                    class="bg-gray-700 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-bold transition"
+                >
+                    📚 View Archives
+                </button>
+                ${state.availableContests.length > 1 ? `
+                    <button 
+                        onclick="selectContest('${state.availableContests.find(c => c.status !== 'skipped')?.id}')" 
+                        class="bg-[#94c120] hover:bg-[#82a81c] text-black px-6 py-3 rounded-lg font-bold transition"
+                    >
+                        View Active Contest →
+                    </button>
+                ` : ''}
+            </div>
+        </div>
+    `;
+    
+    // Hide vote submission button
+    const submitBtn = document.getElementById('submitBtn');
+    if (submitBtn) submitBtn.classList.add('hidden');
+    
+    // Hide vote counter
+    const voteCounter = document.getElementById('voteCounter');
+    if (voteCounter) voteCounter.classList.add('hidden');
+}
+
+/**
+ * Render contest indicator (shows which contest user is viewing)
+ */
+export function renderContestIndicator() {
+    let indicator = document.getElementById('contestIndicator');
+    
+    if (!indicator) {
+        const header = document.querySelector('header');
+        if (!header) return;
+        
+        indicator = document.createElement('div');
+        indicator.id = 'contestIndicator';
+        indicator.className = 'text-center py-2 bg-gray-800/30 border-b border-gray-700/50';
+        header.after(indicator);
+    }
+    
+    if (!state.activeContest) {
+        indicator.classList.add('hidden');
+        return;
+    }
+    
+    // Only show if multiple contests
+    if (state.availableContests.length <= 1) {
+        indicator.classList.add('hidden');
+        return;
+    }
+    
+    indicator.classList.remove('hidden');
+    indicator.innerHTML = `
+        <span class="text-xs text-gray-500">You are viewing:</span>
+        <span class="text-sm font-bold text-[#94c120] ml-2">
+            ${state.activeContest.monthName}
+        </span>
+    `;
+}
+
+// Make navTo available globally for onclick handlers
+window.navTo = navTo;
